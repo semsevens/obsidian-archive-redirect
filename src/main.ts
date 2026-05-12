@@ -2,7 +2,7 @@ import { MarkdownPostProcessorContext, Notice, Plugin, TFile } from "obsidian";
 import { resolve } from "./resolver";
 import { extractUrls } from "./scanner";
 import { download, DownloadResult } from "./downloader";
-import { ArchiveSettings, ArchiveSettingTab, DEFAULT_SETTINGS } from "./settings";
+import { ArchiveSettings, ArchiveSettingTab, DEFAULT_SETTINGS, isInScope } from "./settings";
 
 export default class ArchiveRedirectPlugin extends Plugin {
 	settings!: ArchiveSettings;
@@ -16,6 +16,7 @@ export default class ArchiveRedirectPlugin extends Plugin {
 			this.app.vault.on("modify", async (file) => {
 				if (!this.settings.autoArchiveOnModify) return;
 				if (!(file instanceof TFile) || file.extension !== "md") return;
+				if (!isInScope(file.path, this.settings.includedPaths)) return;
 				await this.archiveMd(file);
 			}),
 		);
@@ -61,8 +62,13 @@ export default class ArchiveRedirectPlugin extends Plugin {
 	}
 
 	private async scanAll() {
-		const files = this.app.vault.getMarkdownFiles();
-		new Notice(`Archive scan: ${files.length} files…`);
+		const files = this.app.vault
+			.getMarkdownFiles()
+			.filter((f) => isInScope(f.path, this.settings.includedPaths));
+		const scopeNote = this.settings.includedPaths.length
+			? ` (scope: ${this.settings.includedPaths.join(", ")})`
+			: "";
+		new Notice(`Archive scan: ${files.length} files${scopeNote}…`);
 		let totalOk = 0;
 		let totalFailed = 0;
 		let processed = 0;

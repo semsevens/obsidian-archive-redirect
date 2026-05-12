@@ -4,12 +4,19 @@ import type ArchiveRedirectPlugin from "./main";
 export interface ArchiveSettings {
 	archiveDirName: string;
 	autoArchiveOnModify: boolean;
+	includedPaths: string[];
 }
 
 export const DEFAULT_SETTINGS: ArchiveSettings = {
 	archiveDirName: "_archive",
 	autoArchiveOnModify: true,
+	includedPaths: [],
 };
+
+export function isInScope(mdPath: string, includedPaths: string[]): boolean {
+	if (includedPaths.length === 0) return true;
+	return includedPaths.some((p) => mdPath === p || mdPath.startsWith(p + "/"));
+}
 
 export class ArchiveSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: ArchiveRedirectPlugin) {
@@ -39,5 +46,22 @@ export class ArchiveSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}),
 			);
+
+		new Setting(containerEl)
+			.setName("Included paths")
+			.setDesc("Only archive files under these vault-relative paths (one per line). Empty = entire vault.")
+			.addTextArea((ta) => {
+				ta.setValue(this.plugin.settings.includedPaths.join("\n"));
+				ta.setPlaceholder("raw/wechat\nraw/x");
+				ta.onChange(async (value) => {
+					this.plugin.settings.includedPaths = value
+						.split("\n")
+						.map((s) => s.trim().replace(/\/+$/, ""))
+						.filter((s) => s.length > 0);
+					await this.plugin.saveSettings();
+				});
+				ta.inputEl.rows = 4;
+				ta.inputEl.cols = 30;
+			});
 	}
 }
