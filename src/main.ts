@@ -42,23 +42,26 @@ export default class ArchiveRedirectPlugin extends Plugin {
 		});
 	}
 
-	private async archiveMd(file: TFile): Promise<{ ok: number; failed: number }> {
+	private async archiveMd(file: TFile): Promise<{ ok: number; transient: number; permanent: number }> {
 		const content = await this.app.vault.read(file);
 		const urls = extractUrls(content);
 		let ok = 0;
-		let failed = 0;
+		let transient = 0;
+		let permanent = 0;
 		for (const url of urls) {
 			const dest = resolve(url, file.path, this.settings.archiveDirName);
 			try {
 				const r: DownloadResult = await download(url, dest, this.app.vault);
 				if (r === "downloaded") ok++;
+				else if (r === "failed-transient") transient++;
+				else if (r === "failed-permanent") permanent++;
 			} catch (e: unknown) {
-				failed++;
+				transient++;
 				const msg = e instanceof Error ? e.message : String(e);
 				console.warn(`[archive-redirect] ${file.path} ← ${url}: ${msg}`);
 			}
 		}
-		return { ok, failed };
+		return { ok, transient, permanent };
 	}
 
 	private async scanAll() {
@@ -70,18 +73,24 @@ export default class ArchiveRedirectPlugin extends Plugin {
 			: "";
 		new Notice(`Archive scan: ${files.length} files${scopeNote}…`);
 		let totalOk = 0;
-		let totalFailed = 0;
+		let totalTransient = 0;
+		let totalPermanent = 0;
 		let processed = 0;
 		for (const f of files) {
-			const { ok, failed } = await this.archiveMd(f);
+			const { ok, transient, permanent } = await this.archiveMd(f);
 			totalOk += ok;
-			totalFailed += failed;
+			totalTransient += transient;
+			totalPermanent += permanent;
 			processed++;
 			if (processed % 25 === 0) {
-				console.log(`[archive-redirect] ${processed}/${files.length}  (+${totalOk} ok, ${totalFailed} failed)`);
+				console.log(
+					`[archive-redirect] ${processed}/${files.length}  (+${totalOk} ok, ${totalTransient} transient, ${totalPermanent} permanent)`,
+				);
 			}
 		}
-		new Notice(`Archive scan done: ${totalOk} downloaded, ${totalFailed} failed.`);
+		new Notice(
+			`Archive scan done: ${totalOk} downloaded, ${totalTransient} transient fails, ${totalPermanent} permanent fails.`,
+		);
 	}
 
 	async loadSettings() {
