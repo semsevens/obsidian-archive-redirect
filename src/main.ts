@@ -3,6 +3,8 @@ import { resolve } from "./resolver";
 import { extractUrls } from "./scanner";
 import { download, DownloadResult } from "./downloader";
 import { ArchiveSettings, ArchiveSettingTab, DEFAULT_SETTINGS, isInScope } from "./settings";
+import { redirectAllMedia } from "./intercept";
+import { createLivePreviewExtension } from "./live-preview";
 
 export default class ArchiveRedirectPlugin extends Plugin {
 	settings!: ArchiveSettings;
@@ -10,7 +12,11 @@ export default class ArchiveRedirectPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
+		// Reading mode
 		this.registerMarkdownPostProcessor((el, ctx) => this.interceptMedia(el, ctx));
+
+		// Live Preview / Source mode (CM6)
+		this.registerEditorExtension(createLivePreviewExtension(this));
 
 		this.registerEvent(
 			this.app.vault.on("modify", async (file) => {
@@ -31,15 +37,7 @@ export default class ArchiveRedirectPlugin extends Plugin {
 	}
 
 	private interceptMedia(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
-		el.querySelectorAll("img, video, audio, source").forEach((node) => {
-			const src = node.getAttribute("src");
-			if (!src || !src.startsWith("http")) return;
-			const localPath = resolve(src, ctx.sourcePath, this.settings.archiveDirName);
-			const file = this.app.vault.getAbstractFileByPath(localPath);
-			if (file instanceof TFile) {
-				node.setAttribute("src", this.app.vault.getResourcePath(file));
-			}
-		});
+		redirectAllMedia(el, ctx.sourcePath, this.settings.archiveDirName, this.app);
 	}
 
 	private async archiveMd(file: TFile): Promise<{ ok: number; transient: number; permanent: number }> {
