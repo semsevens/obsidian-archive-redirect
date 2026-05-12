@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-archive-redirect",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Archive remote URLs from markdown locally and serve from local cache on render.",
 	"main": "main.js",
 	"scripts": {

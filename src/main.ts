@@ -10,7 +10,7 @@ export default class ArchiveRedirectPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		this.registerMarkdownPostProcessor((el, ctx) => this.interceptImg(el, ctx));
+		this.registerMarkdownPostProcessor((el, ctx) => this.interceptMedia(el, ctx));
 
 		this.registerEvent(
 			this.app.vault.on("modify", async (file) => {
@@ -30,14 +30,14 @@ export default class ArchiveRedirectPlugin extends Plugin {
 		this.addSettingTab(new ArchiveSettingTab(this.app, this));
 	}
 
-	private interceptImg(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
-		el.querySelectorAll("img").forEach((img) => {
-			const src = img.getAttribute("src");
+	private interceptMedia(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
+		el.querySelectorAll("img, video, audio, source").forEach((node) => {
+			const src = node.getAttribute("src");
 			if (!src || !src.startsWith("http")) return;
 			const localPath = resolve(src, ctx.sourcePath, this.settings.archiveDirName);
 			const file = this.app.vault.getAbstractFileByPath(localPath);
 			if (file instanceof TFile) {
-				img.setAttribute("src", this.app.vault.getResourcePath(file));
+				node.setAttribute("src", this.app.vault.getResourcePath(file));
 			}
 		});
 	}
