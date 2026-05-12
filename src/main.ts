@@ -81,7 +81,7 @@ export default class ArchiveRedirectPlugin extends Plugin {
 			totalPermanent += permanent;
 			processed++;
 			if (processed % 25 === 0) {
-				console.log(
+				console.debug(
 					`[archive-redirect] ${processed}/${files.length}  (+${totalOk} ok, ${totalTransient} transient, ${totalPermanent} permanent)`,
 				);
 			}

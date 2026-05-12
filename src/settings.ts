@@ -29,7 +29,7 @@ export class ArchiveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Archive directory name")
-			.setDesc("Subdirectory (sibling to each markdown file) that holds cached resources.")
+			.setDesc("Subdirectory (sibling to each Markdown file) that holds cached resources.")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.archiveDirName).onChange(async (value) => {
 					this.plugin.settings.archiveDirName = value || "_archive";
@@ -39,7 +39,7 @@ export class ArchiveSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Auto-archive on file modify")
-			.setDesc("Scan and download new remote resources whenever a markdown file is modified.")
+			.setDesc("Scan and download new remote resources whenever a Markdown file is modified.")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.autoArchiveOnModify).onChange(async (value) => {
 					this.plugin.settings.autoArchiveOnModify = value;
@@ -52,7 +52,6 @@ export class ArchiveSettingTab extends PluginSettingTab {
 			.setDesc("Only archive files under these vault-relative paths (one per line). Empty = entire vault.")
 			.addTextArea((ta) => {
 				ta.setValue(this.plugin.settings.includedPaths.join("\n"));
-				ta.setPlaceholder("raw/wechat\nraw/x");
 				ta.onChange(async (value) => {
 					this.plugin.settings.includedPaths = value
 						.split("\n")
