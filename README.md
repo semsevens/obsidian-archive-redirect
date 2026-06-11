@@ -17,11 +17,13 @@ When the original host disappears (the WeChat account is deleted, the tweet is r
 
 For every remote `<img>`, `<video>`, `<audio>` it encounters:
 
-1. **Archives** the file to `<dir>/_archive/<sha1-of-url>.<ext>` (a sibling folder next to the markdown that referenced it).
+1. **Archives** the file under a content-addressed path (SHA1 of the URL). Two storage modes are supported:
+   - **Sibling** (default): `<mdDir>/_archive/<sha1>.<ext>` — one folder per markdown's directory, notes stay self-contained.
+   - **Central**: `<centralPath>/<bucket>/<sha1>.<ext>` — a single shared folder at a vault-relative path, bucketed by the first 2 hex chars of the SHA1 (256 buckets). True global dedup; cache survives moving the markdown.
 2. **Redirects** the rendered element's `src` to the local archive at display time — in both Reading mode and Live Preview.
 3. **Leaves the markdown file untouched.** The URL in your `.md` never changes. If you later view the file outside Obsidian, share it, or this plugin is uninstalled, the remote URL still works as a fallback.
 
-The archive is content-addressed by URL hash, so the same URL appearing in multiple notes is stored once.
+The archive is content-addressed by URL hash, so the same URL appearing in multiple notes is stored once (sibling mode dedups per folder; central mode dedups across the whole vault).
 
 ## How it works
 
@@ -58,7 +60,9 @@ The plugin archives in three ways:
 
 | Setting | Default | Purpose |
 |---|---|---|
-| Archive directory name | `_archive` | Subfolder name (sibling to each `.md`) that holds cached files. |
+| Archive mode | `Sibling` | `Sibling` = per-note folder; `Central` = one shared vault-relative folder with hash bucketing. |
+| Archive directory name *(sibling)* | `_archive` | Subfolder name (sibling to each `.md`) that holds cached files. |
+| Central archive path *(central)* | `_archive` | Vault-relative folder that holds all cached files, bucketed by hash prefix. |
 | Auto-archive on file modify | on | If off, only the manual scan command triggers downloads. |
 | Included paths | (empty = whole vault) | Newline-separated vault paths to operate on. Example: `raw/wechat`. |
 
@@ -96,6 +100,34 @@ While awaiting Community Plugins approval:
 ### Manual
 
 Download `main.js` and `manifest.json` from the [latest release](https://github.com/semsevens/obsidian-archive-redirect/releases) into `<vault>/.obsidian/plugins/archive-redirect/`, then enable.
+
+## ⚠️ Do NOT combine with attachment-cleanup plugins
+
+Archive Redirect **never modifies your markdown**. The URL in your `.md` stays
+remote; the local cache is swapped in only at render time, via the rendered
+`<img>` / `<video>` / `<audio>` element's `src` attribute.
+
+This means **third-party "remove orphaned attachments" plugins cannot see that
+the local cache is in use** — they scan for markdown `![]()` or `[[wikilink]]`
+references, not HTML `src` attributes. They will flag every file in `_archive/`
+as orphaned and may delete the entire folder, **including content whose source
+URLs are already dead and unrecoverable.**
+
+Known dangerous combinations (verified via GitHub issues — 450-image vault wipes
+have happened in the wild):
+
+- **`oz-clear-unused-images`** — repeated reports of mass deletion of HTML-referenced images.
+- **`Local Images Plus`** "Remove orphaned attachments" / "(Plugin folder)" commands.
+- Any "garbage-collect unused attachments" tool.
+
+Mitigations Archive Redirect ships with:
+
+- A marker file `.archive-redirect-managed` is written into every archive folder
+  with a warning. Some cleanup plugins respect such markers; most do not.
+- This warning, prominently in the README.
+
+**Your responsibility**: either uninstall the cleanup tool while Archive
+Redirect is active, or configure it to exclude your archive folder.
 
 ## Limitations
 

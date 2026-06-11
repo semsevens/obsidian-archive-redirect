@@ -2,9 +2,11 @@ import { MarkdownPostProcessorContext, Notice, Plugin, TFile } from "obsidian";
 import { resolve } from "./resolver";
 import { extractUrls } from "./scanner";
 import { download, DownloadResult } from "./downloader";
-import { ArchiveSettings, ArchiveSettingTab, DEFAULT_SETTINGS, isInScope } from "./settings";
+import { ArchiveSettings, DEFAULT_SETTINGS, isInScope } from "./settings";
+import { ArchiveSettingTab } from "./settings-ui";
 import { redirectAllMedia } from "./intercept";
 import { createLivePreviewExtension } from "./live-preview";
+import { MigrateModal } from "./migrate-modal";
 
 export default class ArchiveRedirectPlugin extends Plugin {
 	settings!: ArchiveSettings;
@@ -33,11 +35,21 @@ export default class ArchiveRedirectPlugin extends Plugin {
 			callback: () => this.scanAll(),
 		});
 
+		this.addCommand({
+			id: "archive-migrate-sibling-to-central",
+			name: "Migrate sibling archives to central",
+			callback: () => this.openMigrateModal(),
+		});
+
 		this.addSettingTab(new ArchiveSettingTab(this.app, this));
 	}
 
+	openMigrateModal() {
+		new MigrateModal(this.app, this.settings).open();
+	}
+
 	private interceptMedia(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
-		redirectAllMedia(el, ctx.sourcePath, this.settings.archiveDirName, this.app);
+		redirectAllMedia(el, ctx.sourcePath, this.settings, this.app);
 	}
 
 	private async archiveMd(file: TFile): Promise<{ ok: number; transient: number; permanent: number }> {
@@ -47,9 +59,9 @@ export default class ArchiveRedirectPlugin extends Plugin {
 		let transient = 0;
 		let permanent = 0;
 		for (const url of urls) {
-			const dest = resolve(url, file.path, this.settings.archiveDirName);
+			const dest = resolve(url, file.path, this.settings);
 			try {
-				const r: DownloadResult = await download(url, dest, this.app.vault);
+				const r: DownloadResult = await download(url, dest, this.app.vault, this.settings);
 				if (r === "downloaded") ok++;
 				else if (r === "failed-transient") transient++;
 				else if (r === "failed-permanent") permanent++;
@@ -92,7 +104,14 @@ export default class ArchiveRedirectPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const raw = (await this.loadData()) ?? {};
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
+		// Migration: pre-v0.5 configs only had `archiveDirName`. Seed the new central
+		// path with that value so a user who later flips to "central" mode keeps the
+		// folder name they had been using, instead of getting a fresh "_archive".
+		if (raw.archiveDirName && raw.centralArchivePath === undefined) {
+			this.settings.centralArchivePath = raw.archiveDirName;
+		}
 	}
 
 	async saveSettings() {

@@ -1,5 +1,9 @@
 import { Vault, requestUrl } from "obsidian";
 import { matchPolicy } from "./policies";
+import type { ArchiveSettings } from "./settings";
+import { archiveRoot, ensureDir, ensureMarker } from "./fs-util";
+
+export { ensureDir, ensureMarker } from "./fs-util";
 
 export type DownloadResult =
 	| "downloaded"
@@ -12,7 +16,12 @@ const RETRY_BACKOFFS_MS = [0, 1000, 3000]; // 3 次尝试: 立刻 / +1s / +3s
 const REQUEST_TIMEOUT_MS = 15_000;
 const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 410, 451]);
 
-export async function download(url: string, destPath: string, vault: Vault): Promise<DownloadResult> {
+export async function download(
+	url: string,
+	destPath: string,
+	vault: Vault,
+	settings: ArchiveSettings,
+): Promise<DownloadResult> {
 	if (await vault.adapter.exists(destPath)) return "skipped-exists";
 
 	const policy = matchPolicy(url);
@@ -36,7 +45,7 @@ export async function download(url: string, destPath: string, vault: Vault): Pro
 			]);
 
 			if (response.status === 200) {
-				await writeFile(vault, destPath, response.arrayBuffer);
+				await writeFile(vault, settings, destPath, response.arrayBuffer);
 				return "downloaded";
 			}
 
@@ -52,7 +61,7 @@ export async function download(url: string, destPath: string, vault: Vault): Pro
 		}
 	}
 
-	await logFailure(vault, destPath, url, fetchUrl, lastErr);
+	await logFailure(vault, settings, destPath, url, fetchUrl, lastErr);
 	return permanent ? "failed-permanent" : "failed-transient";
 }
 
@@ -64,22 +73,34 @@ function rejectAfter<T>(ms: number): Promise<T> {
 	return new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`timeout ${ms}ms`)), ms));
 }
 
-async function writeFile(vault: Vault, destPath: string, buf: ArrayBuffer): Promise<void> {
-	const dir = destPath.substring(0, destPath.lastIndexOf("/"));
-	if (!(await vault.adapter.exists(dir))) await vault.adapter.mkdir(dir);
+async function writeFile(
+	vault: Vault,
+	settings: ArchiveSettings,
+	destPath: string,
+	buf: ArrayBuffer,
+): Promise<void> {
+	await ensureDir(vault, destPath.substring(0, destPath.lastIndexOf("/")));
+	await ensureMarker(vault, archiveRoot(settings, destPath));
 	await vault.adapter.writeBinary(destPath, buf);
 }
 
 async function logFailure(
 	vault: Vault,
+	settings: ArchiveSettings,
 	destPath: string,
 	originalUrl: string,
 	fetchUrl: string,
 	error: string,
 ): Promise<void> {
-	const dir = destPath.substring(0, destPath.lastIndexOf("/"));
-	if (!(await vault.adapter.exists(dir))) await vault.adapter.mkdir(dir);
-	const logPath = `${dir}/.failed.jsonl`;
+	// Central mode: one shared log at <centralPath>/.failed.jsonl (not per-bucket,
+	// which would scatter the log across 256 dirs).
+	// Sibling mode: log lives next to the would-be archive file, same as before.
+	const logDir =
+		settings.archiveMode === "central"
+			? settings.centralArchivePath
+			: destPath.substring(0, destPath.lastIndexOf("/"));
+	await ensureDir(vault, logDir);
+	const logPath = `${logDir}/.failed.jsonl`;
 	const entry =
 		JSON.stringify({
 			url: originalUrl,

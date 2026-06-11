@@ -25,7 +25,7 @@ export function createLivePreviewExtension(plugin: ArchiveRedirectPlugin) {
 			redirect(view: EditorView) {
 				const file = getFileFromView(view, plugin);
 				if (!file) return;
-				redirectAllMedia(view.dom, file.path, plugin.settings.archiveDirName, plugin.app);
+				redirectAllMedia(view.dom, file.path, plugin.settings, plugin.app);
 			}
 		},
 	);

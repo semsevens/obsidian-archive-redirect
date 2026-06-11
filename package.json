@@ -1,12 +1,13 @@
 {
 	"name": "obsidian-archive-redirect",
-	"version": "0.4.1",
+	"version": "0.5.0",
 	"description": "Archive remote URLs from markdown locally and serve from local cache on render.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node esbuild.config.mjs production",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
+		"test": "node --experimental-strip-types --no-warnings --test 'tests/**/*.test.mts'"
 	},
 	"keywords": ["obsidian-plugin"],
 	"author": "semsevens",
