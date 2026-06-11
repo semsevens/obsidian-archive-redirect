@@ -1,5 +1,7 @@
 # Archive Redirect
 
+[![CI](https://github.com/semsevens/obsidian-archive-redirect/actions/workflows/ci.yml/badge.svg)](https://github.com/semsevens/obsidian-archive-redirect/actions/workflows/ci.yml)
+
 Archive remote URLs referenced in your markdown to a local cache, and transparently serve the cache when the note is rendered. Defends your vault against link rot without rewriting any markdown.
 
 ## The problem
