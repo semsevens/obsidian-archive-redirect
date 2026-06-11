@@ -7,6 +7,7 @@ import { ArchiveSettingTab } from "./settings-ui";
 import { redirectAllMedia } from "./intercept";
 import { createLivePreviewExtension } from "./live-preview";
 import { MigrateModal } from "./migrate-modal";
+import { findStaleCentralArchives, reconcile } from "./reconcile.ts";
 
 export default class ArchiveRedirectPlugin extends Plugin {
 	settings!: ArchiveSettings;
@@ -41,11 +42,40 @@ export default class ArchiveRedirectPlugin extends Plugin {
 			callback: () => this.openMigrateModal(),
 		});
 
+		this.addCommand({
+			id: "archive-reconcile-stale-central",
+			name: "Reconcile stale central archive folders",
+			callback: () => this.reconcileStaleArchives(),
+		});
+
 		this.addSettingTab(new ArchiveSettingTab(this.app, this));
 	}
 
 	openMigrateModal() {
 		new MigrateModal(this.app, this.settings).open();
+	}
+
+	private async reconcileStaleArchives() {
+		const target = this.settings.centralArchivePath;
+		const stale = findStaleCentralArchives(this.app, target);
+		if (stale.length === 0) {
+			new Notice("No stale central archives found.");
+			return;
+		}
+		let okCount = 0;
+		const failures: string[] = [];
+		for (const s of stale) {
+			const r = await reconcile(this.app, s.folderPath, target);
+			if (r.ok) {
+				okCount++;
+			} else {
+				const tail = "detail" in r && r.detail ? `: ${r.detail}` : "";
+				failures.push(`${s.folderPath} (${r.reason})${tail}`);
+			}
+		}
+		const summary = `Reconciled ${okCount}/${stale.length} stale archive(s) → ${target}.` +
+			(failures.length ? ` Failures: ${failures.join("; ")}` : "");
+		new Notice(summary);
 	}
 
 	private interceptMedia(el: HTMLElement, ctx: MarkdownPostProcessorContext) {

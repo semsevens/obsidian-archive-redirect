@@ -165,6 +165,49 @@ export class MockVault {
 		return file._content;
 	}
 
+	/** Mirror of Obsidian's Vault.rename — works for files AND folders. */
+	async rename(item: MockFile | MockFolder, newPath: string): Promise<void> {
+		if (this.files.has(item.path)) {
+			return this.fileManager.renameFile(item, newPath);
+		}
+		const folder = this.folders.get(item.path);
+		if (!folder) throw new Error(`not found: ${item.path}`);
+
+		const oldPath = folder.path;
+		// Detach
+		if (folder.parent) {
+			folder.parent.children = folder.parent.children.filter((c) => c !== folder);
+		}
+		this.folders.delete(oldPath);
+
+		// Re-attach at new location
+		this.ensureFolderChainSync(parentPath(newPath));
+		folder.path = newPath;
+		folder.name = baseName(newPath);
+		folder.parent = this.folders.get(parentPath(newPath))!;
+		folder.parent.children.push(folder);
+		this.folders.set(newPath, folder);
+
+		// Descendant paths still start with oldPath; rewrite each.
+		const fixDescendants = (f: MockFolder, oldFolderPath: string, newFolderPath: string) => {
+			for (const child of f.children) {
+				const childRel = child.path.substring(oldFolderPath.length);
+				const newChildPath = newFolderPath + childRel;
+				if ("children" in child) {
+					this.folders.delete(child.path);
+					child.path = newChildPath;
+					this.folders.set(newChildPath, child);
+					fixDescendants(child, oldFolderPath + childRel, newChildPath);
+				} else {
+					this.files.delete(child.path);
+					child.path = newChildPath;
+					this.files.set(newChildPath, child);
+				}
+			}
+		};
+		fixDescendants(folder, oldPath, newPath);
+	}
+
 	// -- App.fileManager mock -------------------------------------------------
 
 	fileManager = {

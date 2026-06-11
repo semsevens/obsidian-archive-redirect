@@ -1,6 +1,7 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ArchiveRedirectPlugin from "./main";
 import type { ArchiveMode } from "./settings";
+import { findStaleCentralArchives, reconcile } from "./reconcile.ts";
 
 export class ArchiveSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: ArchiveRedirectPlugin) {
@@ -67,8 +68,49 @@ export class ArchiveSettingTab extends PluginSettingTab {
 						.setCta()
 						.onClick(() => this.plugin.openMigrateModal()),
 				);
+
+			this.renderStaleArchives(containerEl);
 		}
 
+		this.renderRest(containerEl);
+	}
+
+	private renderStaleArchives(containerEl: HTMLElement): void {
+		const stale = findStaleCentralArchives(this.app, this.plugin.settings.centralArchivePath);
+		if (stale.length === 0) return;
+
+		const target = this.plugin.settings.centralArchivePath;
+		const intro = new Setting(containerEl)
+			.setName("⚠ Stale central archives detected")
+			.setDesc(
+				`These folders contain the Archive Redirect marker but are not at the current central path (${target}). ` +
+					"They were likely created by a previous setting and are no longer being served. Move each one to the current path:",
+			);
+		intro.settingEl.style.borderTop = "1px solid var(--background-modifier-border)";
+
+		for (const s of stale) {
+			new Setting(containerEl)
+				.setName(s.folderPath + "/")
+				.setDesc(`Move into ${target}/`)
+				.addButton((b) =>
+					b
+						.setButtonText("Move here")
+						.setWarning()
+						.onClick(async () => {
+							const r = await reconcile(this.app, s.folderPath, target);
+							if (r.ok) {
+								new Notice(`Moved ${r.from} → ${r.to}`);
+								this.display();
+							} else {
+								const tail = "detail" in r && r.detail ? `: ${r.detail}` : "";
+								new Notice(`Reconcile failed (${r.reason})${tail}`);
+							}
+						}),
+				);
+		}
+	}
+
+	private renderRest(containerEl: HTMLElement): void {
 		new Setting(containerEl)
 			.setName("Auto-archive on file modify")
 			.setDesc("Scan and download new remote resources whenever a Markdown file is modified.")
