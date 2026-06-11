@@ -93,21 +93,60 @@ export class MigrateModal extends Modal {
 
 	private async run(opts: { deleteSource: boolean }) {
 		if (!this.plan) return;
+		const total = this.plan.moves.length;
+
 		this.contentEl.empty();
 		this.contentEl.createEl("h2", { text: "Migrating…" });
-		const log = this.contentEl.createEl("p", { text: "Working — do not close Obsidian." });
+
+		const progressLine = this.contentEl.createEl("p", { text: `0 / ${total}` });
+		const bar = this.contentEl.createEl("progress");
+		bar.max = total;
+		bar.value = 0;
+		bar.style.width = "100%";
+
+		const controller = new AbortController();
+		const startedAt = performance.now();
+
+		let cancelButton: ButtonComponent | null = null;
+		const cancelRow = new Setting(this.contentEl).addButton((b: ButtonComponent) => {
+			cancelButton = b;
+			b.setButtonText("Cancel").setWarning().onClick(() => {
+				controller.abort();
+				b.setButtonText("Cancelling…").setDisabled(true);
+			});
+		});
 
 		const r = await execute(this.app, this.plan, this.settings, {
 			deleteSource: opts.deleteSource,
 			deleteEmptyDirs: this.deleteEmptyDirs,
+			signal: controller.signal,
+			onProgress: ({ done, total: t, bytesProcessed }) => {
+				bar.value = done;
+				const elapsedSec = (performance.now() - startedAt) / 1000;
+				const rate = elapsedSec > 0 ? bytesProcessed / elapsedSec : 0;
+				progressLine.setText(
+					`${done} / ${t}  •  ${formatBytes(bytesProcessed)} processed` +
+						(rate > 0 ? `  •  ${formatBytes(rate)}/s` : ""),
+				);
+			},
 		});
 
-		log.setText(
-			`Done. Moved ${r.moved}, skipped ${r.skipped}, errors ${r.errors.length}. ` +
+		cancelRow.settingEl.remove();
+		void cancelButton;
+
+		const head = r.cancelled ? "Cancelled" : "Done";
+		this.contentEl.createEl("p", {
+			text:
+				`${head}. Moved ${r.moved}, skipped ${r.skipped}, errors ${r.errors.length}. ` +
 				`Empty dirs removed: ${r.emptyDirsRemoved}. ` +
 				`.failed.jsonl files merged: ${r.failedLogMerged}.`,
+		});
+
+		new Notice(
+			r.cancelled
+				? `Archive Redirect: migration cancelled (${r.moved} files moved before cancel).`
+				: `Archive Redirect: migration complete (${r.moved} moved, ${r.errors.length} errors).`,
 		);
-		new Notice(`Archive Redirect: migration complete (${r.moved} moved, ${r.errors.length} errors).`);
 
 		if (r.errors.length > 0) {
 			const errBox = this.contentEl.createEl("details");

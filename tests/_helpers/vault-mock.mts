@@ -165,10 +165,23 @@ export class MockVault {
 		return file._content;
 	}
 
-	/** Mirror of Obsidian's Vault.rename — works for files AND folders. */
+	/** Mirror of Obsidian's Vault.rename — works for files AND folders.
+	 *  Independent of fileManager.renameFile: in real Obsidian these are
+	 *  separate code paths (vault.rename is fs-only; fileManager.renameFile
+	 *  also walks markdown to update backlinks). The mock keeps them
+	 *  separate so tests can assert which one was called. */
 	async rename(item: MockFile | MockFolder, newPath: string): Promise<void> {
 		if (this.files.has(item.path)) {
-			return this.fileManager.renameFile(item, newPath);
+			const f = this.files.get(item.path)!;
+			this.files.delete(item.path);
+			f.parent!.children = f.parent!.children.filter((c) => c !== f);
+			f.path = newPath;
+			f.name = baseName(newPath);
+			this.ensureFolderChainSync(parentPath(newPath));
+			f.parent = this.folders.get(parentPath(newPath))!;
+			f.parent.children.push(f);
+			this.files.set(newPath, f);
+			return;
 		}
 		const folder = this.folders.get(item.path);
 		if (!folder) throw new Error(`not found: ${item.path}`);

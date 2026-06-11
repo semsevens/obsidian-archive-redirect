@@ -100,9 +100,17 @@ export async function scan(app: App, settings: ArchiveSettings): Promise<Migrati
 	return plan;
 }
 
+export interface ProgressEvent {
+	done: number; // moves attempted so far (success + skip + error)
+	total: number;
+	bytesProcessed: number;
+}
+
 export interface ExecuteOptions {
 	deleteSource: boolean; // true = move (rename), false = copy + leave originals
 	deleteEmptyDirs: boolean; // only honored when deleteSource = true
+	onProgress?: (event: ProgressEvent) => void;
+	signal?: AbortSignal; // user-triggered cancel
 }
 
 export interface ExecuteResult {
@@ -111,6 +119,7 @@ export interface ExecuteResult {
 	errors: { path: string; error: string }[];
 	emptyDirsRemoved: number;
 	failedLogMerged: number;
+	cancelled: boolean;
 }
 
 export async function execute(
@@ -125,43 +134,63 @@ export async function execute(
 		errors: [],
 		emptyDirsRemoved: 0,
 		failedLogMerged: 0,
+		cancelled: false,
 	};
 
 	const touchedFolders = new Set<string>();
+	let bytesProcessed = 0;
+	const total = plan.moves.length;
 
 	// Write the marker first — even if the migration has zero files to move (because
 	// the central path is empty), the marker tells future cleanup tools to stay away.
 	await ensureMarker(app.vault, settings.centralArchivePath);
 
-	for (const entry of plan.moves) {
+	for (let i = 0; i < plan.moves.length; i++) {
+		if (options.signal?.aborted) {
+			result.cancelled = true;
+			break;
+		}
+		const entry = plan.moves[i];
 		try {
 			const file = app.vault.getAbstractFileByPath(entry.from);
 			if (!isFile(file)) {
 				result.skipped++;
-				continue;
-			}
-			// Capture the original parent path BEFORE rename — renameFile mutates
-			// file.parent in place, so reading it after the move points to the new
-			// (central) bucket dir, not the sibling _archive we want to clean up.
-			const originalParentPath = file.parent?.path ?? "";
-
-			await ensureDir(app.vault, entry.to.substring(0, entry.to.lastIndexOf("/")));
-
-			if (options.deleteSource) {
-				await app.fileManager.renameFile(file, entry.to);
 			} else {
-				const buf = await app.vault.readBinary(file);
-				await app.vault.adapter.writeBinary(entry.to, buf);
-			}
+				// Capture the original parent path BEFORE rename — rename mutates
+				// file.parent in place, so reading it after the move points to the
+				// new (central) bucket dir, not the sibling _archive we want to clean.
+				const originalParentPath = file.parent?.path ?? "";
 
-			touchedFolders.add(originalParentPath);
-			result.moved++;
+				await ensureDir(app.vault, entry.to.substring(0, entry.to.lastIndexOf("/")));
+
+				if (options.deleteSource) {
+					// Use vault.rename, NOT fileManager.renameFile. The latter walks
+					// every markdown file in the vault looking for backlinks to
+					// update — O(notes × moves), can take minutes for large vaults.
+					// Archive files are never linked from markdown (they're served
+					// via HTML <img> at render time, by URL hash), so the link-aware
+					// rename is pure overhead.
+					await app.vault.rename(file, entry.to);
+				} else {
+					const buf = await app.vault.readBinary(file);
+					await app.vault.adapter.writeBinary(entry.to, buf);
+				}
+
+				touchedFolders.add(originalParentPath);
+				result.moved++;
+				bytesProcessed += entry.bytes;
+			}
 		} catch (e: unknown) {
 			result.errors.push({
 				path: entry.from,
 				error: e instanceof Error ? e.message : String(e),
 			});
 		}
+		options.onProgress?.({
+			done: i + 1,
+			total,
+			bytesProcessed,
+		});
 	}
 
 	result.failedLogMerged = await mergeFailedLogs(app, plan.failedLogs, settings, options);

@@ -262,6 +262,111 @@ describe("migrate — formatBytes", () => {
 	});
 });
 
+describe("migrate — progress + cancel", () => {
+	test("onProgress fires once per planned move", async () => {
+		const v = new MockVault();
+		v.seedFile(`a/_archive/${SHA_A}.jpg`, "x");
+		v.seedFile(`b/_archive/${SHA_B}.png`, "y");
+		v.seedFile(`c/_archive/${SHA_C}.gif`, "z");
+
+		const app = mockApp(v) as unknown as App;
+		const plan = await scan(app, baseSettings);
+		const events: number[] = [];
+		await execute(app, plan, baseSettings, {
+			deleteSource: false,
+			deleteEmptyDirs: false,
+			onProgress: (e) => events.push(e.done),
+		});
+		assert.deepEqual(events, [1, 2, 3]);
+	});
+
+	test("onProgress reports total = plan.moves.length", async () => {
+		const v = new MockVault();
+		v.seedFile(`a/_archive/${SHA_A}.jpg`, "12345"); // 5 bytes
+
+		const app = mockApp(v) as unknown as App;
+		const plan = await scan(app, baseSettings);
+		let lastEvent: { done: number; total: number; bytesProcessed: number } | null = null;
+		await execute(app, plan, baseSettings, {
+			deleteSource: false,
+			deleteEmptyDirs: false,
+			onProgress: (e) => {
+				lastEvent = e;
+			},
+		});
+		assert.notEqual(lastEvent, null);
+		assert.equal(lastEvent!.total, 1);
+		assert.equal(lastEvent!.done, 1);
+		assert.equal(lastEvent!.bytesProcessed, 5);
+	});
+
+	test("signal.aborted stops the loop, result.cancelled is true", async () => {
+		const v = new MockVault();
+		for (const sha of [SHA_A, SHA_B, SHA_C, SHA_D]) {
+			v.seedFile(`a/_archive/${sha}.jpg`, "x");
+		}
+
+		const app = mockApp(v) as unknown as App;
+		const plan = await scan(app, baseSettings);
+		const controller = new AbortController();
+		const r = await execute(app, plan, baseSettings, {
+			deleteSource: false,
+			deleteEmptyDirs: false,
+			signal: controller.signal,
+			onProgress: (e) => {
+				if (e.done === 2) controller.abort();
+			},
+		});
+
+		assert.equal(r.cancelled, true);
+		assert.equal(r.moved, 2);
+	});
+
+	test("non-cancelled run has result.cancelled === false", async () => {
+		const v = new MockVault();
+		v.seedFile(`a/_archive/${SHA_A}.jpg`, "x");
+
+		const app = mockApp(v) as unknown as App;
+		const plan = await scan(app, baseSettings);
+		const r = await execute(app, plan, baseSettings, {
+			deleteSource: false,
+			deleteEmptyDirs: false,
+		});
+		assert.equal(r.cancelled, false);
+	});
+});
+
+describe("migrate — Move uses vault.rename (not fileManager.renameFile)", () => {
+	// fileManager.renameFile walks every md file in the vault to update
+	// backlinks — O(notes × moves). Our archive files are never linked from
+	// markdown, so we use vault.rename. This test pins the behaviour: if
+	// someone reintroduces the slow API by mistake, this fails.
+	test("Move calls app.vault.rename, not app.fileManager.renameFile", async () => {
+		const v = new MockVault();
+		v.seedFile(`a/_archive/${SHA_A}.jpg`, "x");
+
+		let vaultRenameCalls = 0;
+		let fileManagerRenameCalls = 0;
+		const origVaultRename = v.rename.bind(v);
+		v.rename = async (item, newPath) => {
+			vaultRenameCalls++;
+			return origVaultRename(item, newPath);
+		};
+		const origFileManagerRename = v.fileManager.renameFile;
+		v.fileManager.renameFile = async (file, newPath) => {
+			fileManagerRenameCalls++;
+			return origFileManagerRename(file, newPath);
+		};
+
+		const app = mockApp(v) as unknown as App;
+		const plan = await scan(app, baseSettings);
+		await execute(app, plan, baseSettings, { deleteSource: true, deleteEmptyDirs: false });
+
+		assert.equal(vaultRenameCalls, 1, "vault.rename should be called once");
+		assert.equal(fileManagerRenameCalls, 0, "fileManager.renameFile should NOT be called");
+	});
+});
+
 describe("migrate — empty / no-op cases", () => {
 	test("empty vault produces empty plan", async () => {
 		const v = new MockVault();
