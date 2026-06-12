@@ -131,6 +131,27 @@ Mitigations Archive Redirect ships with:
 **Your responsibility**: either uninstall the cleanup tool while Archive
 Redirect is active, or configure it to exclude your archive folder.
 
+## Multi-device & sync
+
+The plugin is designed to behave well across multiple devices that share the same vault via iCloud Drive / Obsidian Sync / Dropbox / Syncthing. URLs are hashed to deterministic paths, settings live in `<vault>/.obsidian/plugins/archive-redirect/data.json` (which syncs), and the local cache itself is stored inside the vault — so a file fetched on one device naturally appears on all of them after sync.
+
+That said, real-world sync introduces a handful of caveats worth knowing:
+
+### Caveats
+
+- **iCloud Drive "Optimize Mac Storage"**: by default, iCloud may keep only file metadata locally and download the bytes on first access. The plugin checks `vault.adapter.exists(path)` which sees the metadata and treats the file as present — but the rendered `<img>` then shows a brief blank while iCloud streams the actual bytes in. Mitigation: in the Finder, right-click `_archive/` → **Download Now**, or disable "Optimize Mac Storage" entirely.
+- **Concurrent migration on two devices** is the most dangerous case. If you run **Migrate sibling archives to central** on two devices at the same time, iCloud will reconcile by creating `.icloud-conflict-*` siblings. No data is lost, but you get a mess to clean up. **Run migration on one device, wait for sync to finish, then verify on the other.**
+- **Plugin version skew**: if device A is on v0.5.0+ and uses central mode while device B is still on v0.4.x, B's resolver still looks for files in sibling `_archive/` folders that A has emptied. B's notes will silently fall back to remote URLs and stay slower. **Update Archive Redirect on every device before switching to central mode.**
+- **Settings drift before sync settles**: if you change `centralArchivePath` on one device and immediately start using the new path on another (before `data.json` has propagated), the two devices will write to different folders. The new `Reconcile stale central archive folders` command (v0.5.1+) detects this by scanning for the `.archive-redirect-managed` marker file outside the current central path and offers to merge.
+- **Same-URL race during sync delay**: device A finishes a download just as device B opens the same note. B may not yet see A's file (sync still propagating) and will re-fetch. No data problem — just duplicate network traffic. The plugin is fully idempotent: same URL → same hash → same byte content, so a duplicate write produces a binary-equal file.
+
+### Recommended setup
+
+1. Install and enable Archive Redirect on **every** device before switching any device to central mode.
+2. Run **Migrate sibling archives to central** on **one** device only. Wait for sync to settle (watch the iCloud icon in the menu bar) before touching the other devices.
+3. If you use iCloud Drive and want fully offline access to cached media, set `_archive/` (or your central path) to **Always Keep Downloaded** in Finder.
+4. If you ever see two folders both containing `.archive-redirect-managed`, run **Reconcile stale central archive folders** from the command palette — it will move the orphan into the current central path.
+
 ## Limitations
 
 - **Desktop only.** Uses Node's `crypto` module; mobile support requires swapping to Web Crypto (which is async) and is planned for a later release.
