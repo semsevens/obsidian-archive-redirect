@@ -86,7 +86,7 @@ export class ArchiveSettingTab extends PluginSettingTab {
 				`These folders contain the Archive Redirect marker but are not at the current central path (${target}). ` +
 					"They were likely created by a previous setting and are no longer being served. Move each one to the current path:",
 			);
-		intro.settingEl.style.borderTop = "1px solid var(--background-modifier-border)";
+		intro.settingEl.setCssStyles({ borderTop: "1px solid var(--background-modifier-border)" });
 
 		for (const s of stale) {
 			new Setting(containerEl)

@@ -1,7 +1,7 @@
 {
 	"id": "archive-redirect",
 	"name": "Archive Redirect",
-	"version": "0.5.3",
+	"version": "0.5.4",
 	"minAppVersion": "1.4.0",
 	"description": "Archive remote URLs from markdown locally and serve from local cache on render.",
 	"author": "semsevens",

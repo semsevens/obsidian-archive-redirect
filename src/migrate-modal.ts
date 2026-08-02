@@ -102,7 +102,7 @@ export class MigrateModal extends Modal {
 		const bar = this.contentEl.createEl("progress");
 		bar.max = total;
 		bar.value = 0;
-		bar.style.width = "100%";
+		bar.setCssStyles({ width: "100%" });
 
 		const controller = new AbortController();
 		const startedAt = performance.now();

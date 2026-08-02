@@ -221,6 +221,21 @@ export class MockVault {
 		fixDescendants(folder, oldPath, newPath);
 	}
 
+	// -- Vault.trash (system trash) -------------------------------------------
+
+	trash = async (file: MockFile | MockFolder, _system: boolean) => {
+		this.trashed.push(file.path);
+		if (this.files.has(file.path)) {
+			const f = this.files.get(file.path)!;
+			this.files.delete(file.path);
+			f.parent!.children = f.parent!.children.filter((c) => c !== f);
+		} else if (this.folders.has(file.path)) {
+			const f = this.folders.get(file.path)!;
+			this.folders.delete(file.path);
+			if (f.parent) f.parent.children = f.parent.children.filter((c) => c !== f);
+		}
+	};
+
 	// -- App.fileManager mock -------------------------------------------------
 
 	fileManager = {

@@ -201,7 +201,7 @@ export async function execute(
 			const folder = app.vault.getAbstractFileByPath(folderPath);
 			if (isFolder(folder) && folder.children.length === 0) {
 				try {
-					await app.fileManager.trashFile(folder);
+					await app.vault.trash(folder, true);
 					result.emptyDirsRemoved++;
 				} catch (e) {
 					console.warn(`[archive-redirect:migrate] could not remove empty dir ${folderPath}: ${e}`);
@@ -248,7 +248,7 @@ async function mergeFailedLogs(
 			mergedCount++;
 			if (options.deleteSource) {
 				const f = app.vault.getAbstractFileByPath(path);
-				if (isFile(f)) await app.fileManager.trashFile(f);
+				if (isFile(f)) await app.vault.trash(f, true);
 			}
 		} catch (e) {
 			console.warn(`[archive-redirect:migrate] failed log read ${path}: ${e}`);
