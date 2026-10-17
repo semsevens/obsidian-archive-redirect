@@ -91,8 +91,11 @@ export default class ArchiveRedirectPlugin extends Plugin {
 		new Notice(summary);
 	}
 
-	private async interceptMedia(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
-		await redirectAllMedia(el, ctx.sourcePath, this.settings, this.app, this.server);
+	private interceptMedia(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
+		// Not awaited: Obsidian holds the whole note back until a returned promise
+		// settles, and the server check behind it can take seconds, or longer in a
+		// background window. Images are swapped once it answers.
+		void redirectAllMedia(el, ctx.sourcePath, this.settings, this.app, this.server);
 	}
 
 	private async archiveMd(file: TFile): Promise<{ ok: number; transient: number; permanent: number }> {
