@@ -1,6 +1,6 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ArchiveRedirectPlugin from "./main";
-import type { ArchiveMode } from "./settings";
+import { isExternalPath, type ArchiveMode, type SourceOrder } from "./settings";
 import { findStaleCentralArchives, reconcile } from "./reconcile.ts";
 
 export class ArchiveSettingTab extends PluginSettingTab {
@@ -42,7 +42,8 @@ export class ArchiveSettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName("Central archive path")
 				.setDesc(
-					"Vault-relative folder that holds all cached files. " +
+					"Folder that holds all cached files: vault-relative, or an absolute path " +
+						"(or ~/…) outside the vault. " +
 						"Files are bucketed by hash prefix (e.g. _archive/ab/abcd1234….jpg).",
 				)
 				.addText((text) =>
@@ -56,23 +57,61 @@ export class ArchiveSettingTab extends PluginSettingTab {
 						}),
 				);
 
-			new Setting(containerEl)
-				.setName("Migrate sibling archives")
-				.setDesc(
-					"Find every per-note sibling archive folder in this vault and move (or copy) " +
-						"its files into the central path above. Opens a preview before any file is touched.",
-				)
-				.addButton((b) =>
-					b
-						.setButtonText("Migrate now…")
-						.setCta()
-						.onClick(() => this.plugin.openMigrateModal()),
-				);
-
-			this.renderStaleArchives(containerEl);
+			if (!isExternalPath(this.plugin.settings.centralArchivePath)) this.renderInVaultTools(containerEl);
 		}
 
+		this.renderServer(containerEl);
 		this.renderRest(containerEl);
+	}
+
+	private renderInVaultTools(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName("Migrate sibling archives")
+			.setDesc(
+				"Find every per-note sibling archive folder in this vault and move (or copy) " +
+					"its files into the central path above. Opens a preview before any file is touched.",
+			)
+			.addButton((b) =>
+				b
+					.setButtonText("Migrate now…")
+					.setCta()
+					.onClick(() => this.plugin.openMigrateModal()),
+			);
+
+		this.renderStaleArchives(containerEl);
+	}
+
+	private renderServer(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName("Server URL")
+			.setDesc(
+				"Base URL of a copy of the archive on a server, laid out like the central folder " +
+					"(<url>/ab/abcd1234….jpg). Leave empty to use only the local archive.",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("https://example.ts.net/library/_archive")
+					.setValue(this.plugin.settings.serverUrl)
+					.onChange(async (value) => {
+						this.plugin.settings.serverUrl = value.trim().replace(/\/+$/, "");
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Load order")
+			.setDesc(
+				"Which copy to show first. If it fails to load (server off, file not there yet), " +
+					"the next one is tried; the original URL is always the last resort.",
+			)
+			.addDropdown((dd) => {
+				dd.addOption("server-first", "Server → local → original");
+				dd.addOption("local-first", "Local → server → original");
+				dd.setValue(this.plugin.settings.sourceOrder).onChange(async (value) => {
+					this.plugin.settings.sourceOrder = value as SourceOrder;
+					await this.plugin.saveSettings();
+				});
+			});
 	}
 
 	private renderStaleArchives(containerEl: HTMLElement): void {

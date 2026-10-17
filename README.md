@@ -21,8 +21,8 @@ For every remote `<img>`, `<video>`, `<audio>` it encounters:
 
 1. **Archives** the file under a content-addressed path (SHA1 of the URL). Two storage modes are supported:
    - **Sibling** (default): `<mdDir>/_archive/<sha1>.<ext>` — one folder per markdown's directory, notes stay self-contained.
-   - **Central**: `<centralPath>/<bucket>/<sha1>.<ext>` — a single shared folder at a vault-relative path, bucketed by the first 2 hex chars of the SHA1 (256 buckets). True global dedup; cache survives moving the markdown.
-2. **Redirects** the rendered element's `src` to the local archive at display time — in both Reading mode and Live Preview.
+   - **Central**: `<centralPath>/<bucket>/<sha1>.<ext>` — a single shared folder, bucketed by the first 2 hex chars of the SHA1 (256 buckets). True global dedup; cache survives moving the markdown. The folder can be vault-relative or an absolute path outside the vault (e.g. `~/Media/_archive`).
+2. **Redirects** the rendered element's `src` to an archived copy at display time — in both Reading mode and Live Preview. With a **server URL** set, a copy of the archive on your own server (same `<bucket>/<sha1>.<ext>` layout) is used too; **Load order** picks server or local first. A copy that fails to load hands over to the next, and the remote URL is the last resort.
 3. **Leaves the markdown file untouched.** The URL in your `.md` never changes. If you later view the file outside Obsidian, share it, or this plugin is uninstalled, the remote URL still works as a fallback.
 
 The archive is content-addressed by URL hash, so the same URL appearing in multiple notes is stored once (sibling mode dedups per folder; central mode dedups across the whole vault).
@@ -45,8 +45,8 @@ The archive is content-addressed by URL hash, so the same URL appearing in multi
            ▼
    ┌──────────────────────────────────────┐
    │  At render time:                     │
-   │  resolve(url) → vault path → swap    │   ← Reading + Live Preview
-   │  if local present, else leave remote │
+   │  resolve(url) → server / local copy  │   ← Reading + Live Preview
+   │  try them in Load order, then remote │
    └──────────────────────────────────────┘
 ```
 
@@ -64,7 +64,9 @@ The plugin archives in three ways:
 |---|---|---|
 | Archive mode | `Sibling` | `Sibling` = per-note folder; `Central` = one shared vault-relative folder with hash bucketing. |
 | Archive directory name *(sibling)* | `_archive` | Subfolder name (sibling to each `.md`) that holds cached files. |
-| Central archive path *(central)* | `_archive` | Vault-relative folder that holds all cached files, bucketed by hash prefix. |
+| Central archive path *(central)* | `_archive` | Folder that holds all cached files, bucketed by hash prefix: vault-relative, or an absolute / `~/` path outside the vault. Migrate and reconcile work only inside the vault. |
+| Server URL | (empty = none) | Base URL of a server copy of the archive in the central layout, e.g. `https://host.ts.net/library/_archive`. The plugin only reads from it; copy files there yourself (e.g. `rsync`). Checked once, then every 5 min (30 s while unreachable). |
+| Load order | `Server → local → original` | Which copy to show first. The remote URL is always last. |
 | Auto-archive on file modify | on | If off, only the manual scan command triggers downloads. |
 | Included paths | (empty = whole vault) | Newline-separated vault paths to operate on. Example: `raw/wechat`. |
 

@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import { strict as assert } from "node:assert";
-import { resolve } from "../src/resolver.ts";
+import { orderSources, resolve, serverUrlFor } from "../src/resolver.ts";
 import type { ArchiveSettings } from "../src/settings.ts";
 
 const sibling: ArchiveSettings = {
@@ -9,6 +9,8 @@ const sibling: ArchiveSettings = {
 	centralArchivePath: "_archive",
 	autoArchiveOnModify: true,
 	includedPaths: [],
+	serverUrl: "",
+	sourceOrder: "server-first",
 };
 const central: ArchiveSettings = { ...sibling, archiveMode: "central" };
 
@@ -87,5 +89,31 @@ describe("resolver — sibling vs central same hash", () => {
 		const c = resolve(url, "a/b.md", central);
 		// Last segment is <sha1>.<ext> in both cases.
 		assert.equal(s.split("/").pop(), c.split("/").pop());
+	});
+});
+
+describe("resolver — server copy", () => {
+	test("mirrors the central layout under the server URL", () => {
+		const url = "https://example.com/x.png";
+		const local = resolve(url, "a/b.md", { ...central, centralArchivePath: "raw/_archive" });
+		const server = serverUrlFor(url, "https://host.ts.net/library/_archive/");
+		assert.equal(server, "https://host.ts.net/library/_archive/" + local.substring("raw/_archive/".length));
+	});
+	test("no server URL → no server copy", () => {
+		assert.equal(serverUrlFor("https://example.com/x.png", "  "), null);
+	});
+});
+
+describe("resolver — orderSources", () => {
+	const copies = { local: "app://local/x.png", server: "https://host/x.png" };
+	test("server first", () => {
+		assert.deepEqual(orderSources(copies, "server-first"), [copies.server, copies.local]);
+	});
+	test("local first", () => {
+		assert.deepEqual(orderSources(copies, "local-first"), [copies.local, copies.server]);
+	});
+	test("missing copies are left out", () => {
+		assert.deepEqual(orderSources({ local: null, server: copies.server }, "local-first"), [copies.server]);
+		assert.deepEqual(orderSources({ local: null, server: null }, "server-first"), []);
 	});
 });

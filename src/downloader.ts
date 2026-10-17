@@ -2,6 +2,7 @@ import { Vault, requestUrl } from "obsidian";
 import { matchPolicy } from "./policies";
 import type { ArchiveSettings } from "./settings";
 import { archiveRoot, ensureDir, ensureMarker } from "./fs-util";
+import { storeFor } from "./store";
 
 export { ensureDir, ensureMarker } from "./fs-util";
 
@@ -22,7 +23,8 @@ export async function download(
 	vault: Vault,
 	settings: ArchiveSettings,
 ): Promise<DownloadResult> {
-	if (await vault.adapter.exists(destPath)) return "skipped-exists";
+	const dest = storeFor(vault, destPath);
+	if (await dest.store.exists(dest.path)) return "skipped-exists";
 
 	const policy = matchPolicy(url);
 	if (!policy.archive) return "skipped-policy";
@@ -79,9 +81,10 @@ async function writeFile(
 	destPath: string,
 	buf: ArrayBuffer,
 ): Promise<void> {
-	await ensureDir(vault, destPath.substring(0, destPath.lastIndexOf("/")));
-	await ensureMarker(vault, archiveRoot(settings, destPath));
-	await vault.adapter.writeBinary(destPath, buf);
+	const { store, path } = storeFor(vault, destPath);
+	await ensureDir(store, path.substring(0, path.lastIndexOf("/")));
+	await ensureMarker(store, storeFor(vault, archiveRoot(settings, destPath)).path);
+	await store.writeBinary(path, buf);
 }
 
 async function logFailure(
@@ -99,8 +102,9 @@ async function logFailure(
 		settings.archiveMode === "central"
 			? settings.centralArchivePath
 			: destPath.substring(0, destPath.lastIndexOf("/"));
-	await ensureDir(vault, logDir);
-	const logPath = `${logDir}/.failed.jsonl`;
+	const { store, path: dir } = storeFor(vault, logDir);
+	await ensureDir(store, dir);
+	const logPath = `${dir}/.failed.jsonl`;
 	const entry =
 		JSON.stringify({
 			url: originalUrl,
@@ -109,5 +113,5 @@ async function logFailure(
 			error,
 			ts: new Date().toISOString(),
 		}) + "\n";
-	await vault.adapter.append(logPath, entry);
+	await store.append(logPath, entry);
 }

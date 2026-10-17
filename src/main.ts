@@ -2,18 +2,22 @@ import { MarkdownPostProcessorContext, Notice, Plugin, TFile } from "obsidian";
 import { resolve } from "./resolver";
 import { extractUrls } from "./scanner";
 import { download, DownloadResult } from "./downloader";
-import { ArchiveSettings, DEFAULT_SETTINGS, isInScope } from "./settings";
+import { ArchiveSettings, DEFAULT_SETTINGS, isExternalPath, isInScope } from "./settings";
 import { ArchiveSettingTab } from "./settings-ui";
 import { redirectAllMedia } from "./intercept";
 import { createLivePreviewExtension } from "./live-preview";
 import { MigrateModal } from "./migrate-modal";
 import { findStaleCentralArchives, reconcile } from "./reconcile.ts";
+import { ServerProbe } from "./server-probe";
 
 export default class ArchiveRedirectPlugin extends Plugin {
 	settings!: ArchiveSettings;
+	readonly server = new ServerProbe();
 
 	async onload() {
 		await this.loadSettings();
+		// Ask the server now, so the first note rendered doesn't wait for the answer.
+		void this.server.reachable(this.settings.serverUrl);
 
 		// Reading mode
 		this.registerMarkdownPostProcessor((el, ctx) => this.interceptMedia(el, ctx));
@@ -51,11 +55,20 @@ export default class ArchiveRedirectPlugin extends Plugin {
 		this.addSettingTab(new ArchiveSettingTab(this.app, this));
 	}
 
+	/** Migrate and reconcile move folders within the vault, so they need the central path there too. */
+	centralPathInVault(): boolean {
+		if (!isExternalPath(this.settings.centralArchivePath)) return true;
+		new Notice("The central archive path is outside the vault; move files there yourself.");
+		return false;
+	}
+
 	openMigrateModal() {
+		if (!this.centralPathInVault()) return;
 		new MigrateModal(this.app, this.settings).open();
 	}
 
 	private async reconcileStaleArchives() {
+		if (!this.centralPathInVault()) return;
 		const target = this.settings.centralArchivePath;
 		const stale = findStaleCentralArchives(this.app, target);
 		if (stale.length === 0) {
@@ -78,8 +91,8 @@ export default class ArchiveRedirectPlugin extends Plugin {
 		new Notice(summary);
 	}
 
-	private interceptMedia(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
-		redirectAllMedia(el, ctx.sourcePath, this.settings, this.app);
+	private async interceptMedia(el: HTMLElement, ctx: MarkdownPostProcessorContext) {
+		await redirectAllMedia(el, ctx.sourcePath, this.settings, this.app, this.server);
 	}
 
 	private async archiveMd(file: TFile): Promise<{ ok: number; transient: number; permanent: number }> {

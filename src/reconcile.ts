@@ -79,7 +79,7 @@ export async function reconcile(app: App, fromPath: string, toPath: string): Pro
 
 	// Ensure destination parent exists ("cache/media" needs "cache/" first).
 	const parentOfDest = toPath.substring(0, toPath.lastIndexOf("/"));
-	if (parentOfDest) await ensureDir(app.vault, parentOfDest);
+	if (parentOfDest) await ensureDir(app.vault.adapter, parentOfDest);
 
 	try {
 		await app.vault.rename(folder, toPath);

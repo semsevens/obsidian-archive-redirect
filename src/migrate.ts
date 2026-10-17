@@ -143,7 +143,7 @@ export async function execute(
 
 	// Write the marker first — even if the migration has zero files to move (because
 	// the central path is empty), the marker tells future cleanup tools to stay away.
-	await ensureMarker(app.vault, settings.centralArchivePath);
+	await ensureMarker(app.vault.adapter, settings.centralArchivePath);
 
 	for (let i = 0; i < plan.moves.length; i++) {
 		if (options.signal?.aborted) {
@@ -161,7 +161,7 @@ export async function execute(
 				// new (central) bucket dir, not the sibling _archive we want to clean.
 				const originalParentPath = file.parent?.path ?? "";
 
-				await ensureDir(app.vault, entry.to.substring(0, entry.to.lastIndexOf("/")));
+				await ensureDir(app.vault.adapter, entry.to.substring(0, entry.to.lastIndexOf("/")));
 
 				if (options.deleteSource) {
 					// Use vault.rename, NOT fileManager.renameFile. The latter walks
@@ -231,7 +231,7 @@ async function mergeFailedLogs(
 
 	const centralLogDir = settings.centralArchivePath;
 	const centralLogPath = `${centralLogDir}/.failed.jsonl`;
-	await ensureDir(app.vault, centralLogDir);
+	await ensureDir(app.vault.adapter, centralLogDir);
 
 	const byUrl = new Map<string, { line: string; ts: string }>();
 

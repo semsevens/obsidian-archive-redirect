@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import { strict as assert } from "node:assert";
-import { isInScope, DEFAULT_SETTINGS } from "../src/settings.ts";
+import { isInScope, DEFAULT_SETTINGS, expandHome, isExternalPath } from "../src/settings.ts";
 
 describe("settings — isInScope", () => {
 	test("empty includedPaths = whole vault", () => {
@@ -36,5 +36,22 @@ describe("settings — defaults", () => {
 	});
 	test("default auto-archive is on", () => {
 		assert.equal(DEFAULT_SETTINGS.autoArchiveOnModify, true);
+	});
+});
+
+describe("settings — archive outside the vault", () => {
+	test("absolute and ~/ paths are external", () => {
+		assert.equal(isExternalPath("/Users/me/Media/_archive"), true);
+		assert.equal(isExternalPath("~/Media/_archive"), true);
+		assert.equal(isExternalPath("raw/_archive"), false);
+		assert.equal(isExternalPath("_archive"), false);
+	});
+	test("~/ expands to the home folder", () => {
+		assert.equal(expandHome("~/Media/_archive/ab/x.png", "/Users/me"), "/Users/me/Media/_archive/ab/x.png");
+		assert.equal(expandHome("/abs/x.png", "/Users/me"), "/abs/x.png");
+	});
+	test("no server by default, server first once one is set", () => {
+		assert.equal(DEFAULT_SETTINGS.serverUrl, "");
+		assert.equal(DEFAULT_SETTINGS.sourceOrder, "server-first");
 	});
 });

@@ -1,16 +1,16 @@
-import type { Vault } from "obsidian";
 import type { ArchiveSettings } from "./settings";
+import type { Store } from "./store";
 
 // Type-only imports above keep this module loadable in plain Node (test env).
 
 // vault.adapter.mkdir is a single-level mkdir, not `mkdir -p`. Central mode produces
 // paths like `_archive/ab/<hash>.jpg`; the bucket dir's parent may not exist yet on
 // a fresh vault. Walk up and create each level.
-export async function ensureDir(vault: Vault, dir: string): Promise<void> {
-	if (!dir || (await vault.adapter.exists(dir))) return;
+export async function ensureDir(store: Store, dir: string): Promise<void> {
+	if (!dir || (await store.exists(dir))) return;
 	const parent = dir.substring(0, dir.lastIndexOf("/"));
-	if (parent) await ensureDir(vault, parent);
-	await vault.adapter.mkdir(dir);
+	if (parent) await ensureDir(store, parent);
+	await store.mkdir(dir);
 }
 
 export const MARKER_FILENAME = ".archive-redirect-managed";
@@ -45,10 +45,10 @@ export function archiveRoot(settings: ArchiveSettings, destPath: string): string
 	return destPath.substring(0, destPath.lastIndexOf("/"));
 }
 
-export async function ensureMarker(vault: Vault, root: string): Promise<void> {
+export async function ensureMarker(store: Store, root: string): Promise<void> {
 	if (!root) return;
 	const markerPath = `${root}/${MARKER_FILENAME}`;
-	if (await vault.adapter.exists(markerPath)) return;
-	await ensureDir(vault, root);
-	await vault.adapter.write(markerPath, MARKER_CONTENT);
+	if (await store.exists(markerPath)) return;
+	await ensureDir(store, root);
+	await store.write(markerPath, MARKER_CONTENT);
 }
