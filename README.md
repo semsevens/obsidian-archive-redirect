@@ -1,5 +1,9 @@
 # Archive Redirect
 
+> **Archive Redirect is now part of [Media One](https://github.com/semsevens/obsidian-media-transcript)**, as its
+> *Web image archive* module. Install Media One (formerly Media Transcript) from the community plugins, disable
+> Archive Redirect, and reload Media One: it takes over your Archive Redirect settings. This plugin gets no further updates.
+
 [![CI](https://github.com/semsevens/obsidian-archive-redirect/actions/workflows/ci.yml/badge.svg)](https://github.com/semsevens/obsidian-archive-redirect/actions/workflows/ci.yml)
 
 Archive remote URLs referenced in your markdown to a local cache, and transparently serve the cache when the note is rendered. Defends your vault against link rot without rewriting any markdown.
