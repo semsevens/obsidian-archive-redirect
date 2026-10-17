@@ -16,8 +16,8 @@ const baseSettings: ArchiveSettings = {
 	centralArchivePath: "_archive",
 	autoArchiveOnModify: true,
 	includedPaths: [],
-	serverUrl: "",
-	sourceOrder: "server-first",
+	sources: [{ kind: "local" }],
+	pendingUploads: {},
 };
 
 describe("migrate — scan", () => {

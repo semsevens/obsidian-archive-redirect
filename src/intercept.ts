@@ -1,13 +1,13 @@
 import { existsSync } from "fs";
 import { homedir } from "os";
 import { App, Platform, TFile } from "obsidian";
-import { orderSources, resolve, serverUrlFor } from "./resolver";
-import type { ServerProbe } from "./server-probe";
+import { resolve, sourceCandidates } from "./resolver";
+import type { ArchiveServers } from "./servers";
 import { expandHome, isExternalPath, type ArchiveSettings } from "./settings";
 
 /**
  * Walk an element's media nodes (img/video/audio/source) and point each remote
- * src at its archived copies, in the configured order: each copy that fails to
+ * src at its archived copies, in source order: each copy that fails to
  * load hands over to the next, and the remote URL comes last.
  */
 export async function redirectAllMedia(
@@ -15,7 +15,7 @@ export async function redirectAllMedia(
 	sourcePath: string,
 	settings: ArchiveSettings,
 	app: App,
-	server: ServerProbe,
+	servers: ArchiveServers,
 ): Promise<number> {
 	const nodes: { node: HTMLElement; url: string }[] = [];
 	root.querySelectorAll<HTMLElement>("img, video, audio, source").forEach((node) => {
@@ -28,17 +28,11 @@ export async function redirectAllMedia(
 	});
 	if (nodes.length === 0) return 0;
 
-	const serverUp = await server.reachable(settings.serverUrl);
+	const up = await servers.check();
 	let swapped = 0;
 	for (const { node, url } of nodes) {
 		if (node.getAttribute("src") !== url) continue; // re-rendered while we waited
-		const copies = orderSources(
-			{
-				local: localSrc(url, sourcePath, settings, app),
-				server: serverUp ? serverUrlFor(url, settings.serverUrl) : null,
-			},
-			settings.sourceOrder,
-		);
+		const copies = sourceCandidates(url, settings.sources, localSrc(url, sourcePath, settings, app), (s) => !!up.get(s));
 		if (copies.length === 0) {
 			delete node.dataset.archiveSrc; // not archived yet: look again next pass
 			continue;

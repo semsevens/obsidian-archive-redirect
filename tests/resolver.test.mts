@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import { strict as assert } from "node:assert";
-import { orderSources, resolve, serverUrlFor } from "../src/resolver.ts";
+import { archiveName, nameOf, resolve, sourceCandidates } from "../src/resolver.ts";
 import type { ArchiveSettings } from "../src/settings.ts";
 
 const sibling: ArchiveSettings = {
@@ -9,8 +9,8 @@ const sibling: ArchiveSettings = {
 	centralArchivePath: "_archive",
 	autoArchiveOnModify: true,
 	includedPaths: [],
-	serverUrl: "",
-	sourceOrder: "server-first",
+	sources: [{ kind: "local" }],
+	pendingUploads: {},
 };
 const central: ArchiveSettings = { ...sibling, archiveMode: "central" };
 
@@ -92,28 +92,35 @@ describe("resolver — sibling vs central same hash", () => {
 	});
 });
 
-describe("resolver — server copy", () => {
-	test("mirrors the central layout under the server URL", () => {
-		const url = "https://example.com/x.png";
+describe("resolver — server copies", () => {
+	const url = "https://example.com/x.png";
+	test("servers use the central layout", () => {
 		const local = resolve(url, "a/b.md", { ...central, centralArchivePath: "raw/_archive" });
-		const server = serverUrlFor(url, "https://host.ts.net/library/_archive/");
-		assert.equal(server, "https://host.ts.net/library/_archive/" + local.substring("raw/_archive/".length));
+		assert.equal(local, "raw/_archive/" + archiveName(url));
 	});
-	test("no server URL → no server copy", () => {
-		assert.equal(serverUrlFor("https://example.com/x.png", "  "), null);
+	test("nameOf maps any local archive path to the server name", () => {
+		const name = archiveName(url);
+		assert.equal(nameOf(resolve(url, "a/b.md", central)), name);
+		assert.equal(nameOf(resolve(url, "a/b.md", sibling)), name); // sibling has no bucket folder
+		assert.equal(nameOf("~/Media/_archive/" + name), name);
 	});
 });
 
-describe("resolver — orderSources", () => {
-	const copies = { local: "app://local/x.png", server: "https://host/x.png" };
-	test("server first", () => {
-		assert.deepEqual(orderSources(copies, "server-first"), [copies.server, copies.local]);
+describe("resolver — sourceCandidates", () => {
+	const url = "https://example.com/x.png";
+	const local = "app://local/x.png";
+	const a = "https://a.ts.net/dav/archive";
+	const b = "https://b.ts.net/dav/archive";
+	const all = () => true;
+	test("follows source order", () => {
+		const got = sourceCandidates(url, [{ kind: "server", url: a }, { kind: "local" }, { kind: "server", url: b }], local, all);
+		assert.deepEqual(got, [`${a}/${archiveName(url)}`, local, `${b}/${archiveName(url)}`]);
 	});
-	test("local first", () => {
-		assert.deepEqual(orderSources(copies, "local-first"), [copies.local, copies.server]);
+	test("servers that are down and a missing local copy are left out", () => {
+		const got = sourceCandidates(url, [{ kind: "server", url: a }, { kind: "local" }, { kind: "server", url: b }], null, (s) => s === b);
+		assert.deepEqual(got, [`${b}/${archiveName(url)}`]);
 	});
-	test("missing copies are left out", () => {
-		assert.deepEqual(orderSources({ local: null, server: copies.server }, "local-first"), [copies.server]);
-		assert.deepEqual(orderSources({ local: null, server: null }, "server-first"), []);
+	test("nothing archived → nothing to try", () => {
+		assert.deepEqual(sourceCandidates(url, [{ kind: "local" }], null, all), []);
 	});
 });

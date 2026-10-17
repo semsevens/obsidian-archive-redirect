@@ -1,6 +1,6 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ArchiveRedirectPlugin from "./main";
-import { isExternalPath, type ArchiveMode, type SourceOrder } from "./settings";
+import { isExternalPath, normalizeServerUrl, type ArchiveMode, type ArchiveSource } from "./settings";
 import { findStaleCentralArchives, reconcile } from "./reconcile.ts";
 
 export class ArchiveSettingTab extends PluginSettingTab {
@@ -60,7 +60,7 @@ export class ArchiveSettingTab extends PluginSettingTab {
 			if (!isExternalPath(this.plugin.settings.centralArchivePath)) this.renderInVaultTools(containerEl);
 		}
 
-		this.renderServer(containerEl);
+		this.renderSources(containerEl);
 		this.renderRest(containerEl);
 	}
 
@@ -81,37 +81,88 @@ export class ArchiveSettingTab extends PluginSettingTab {
 		this.renderStaleArchives(containerEl);
 	}
 
-	private renderServer(containerEl: HTMLElement): void {
+	private renderSources(containerEl: HTMLElement): void {
 		new Setting(containerEl)
-			.setName("Server URL")
+			.setName("Sources")
+			.setHeading()
 			.setDesc(
-				"Base URL of a copy of the archive on a server, laid out like the central folder " +
-					"(<url>/ab/abcd1234….jpg). Leave empty to use only the local archive.",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("https://example.ts.net/library/_archive")
-					.setValue(this.plugin.settings.serverUrl)
-					.onChange(async (value) => {
-						this.plugin.settings.serverUrl = value.trim().replace(/\/+$/, "");
-						await this.plugin.saveSettings();
-					}),
+				"Where archived copies are shown from, first choice first. A copy that fails to load " +
+					"(server off, file not there yet) hands over to the next; the original URL comes last. " +
+					"New downloads are saved to the local archive and uploaded to every server; a server " +
+					"that can't be reached gets them once it's back.",
 			);
 
+		const sources = this.plugin.settings.sources;
+		const save = async () => {
+			await this.plugin.saveSettings();
+			this.display();
+		};
+		sources.forEach((source, i) => {
+			const row = new Setting(containerEl)
+				.setName(source.kind === "local" ? "Local archive" : source.url)
+				.setDesc(source.kind === "local" ? this.localLabel() : "Server (WebDAV)");
+			row.addExtraButton((b) =>
+				b.setIcon("arrow-up").setTooltip("Move up").setDisabled(i === 0).onClick(async () => {
+					[sources[i - 1], sources[i]] = [sources[i], sources[i - 1]];
+					await save();
+				}),
+			);
+			row.addExtraButton((b) =>
+				b.setIcon("arrow-down").setTooltip("Move down").setDisabled(i === sources.length - 1).onClick(async () => {
+					[sources[i + 1], sources[i]] = [sources[i], sources[i + 1]];
+					await save();
+				}),
+			);
+			// The local archive always stays: new downloads are kept there too.
+			if (source.kind === "server") {
+				row.addExtraButton((b) =>
+					b.setIcon("trash").setTooltip("Remove").onClick(async () => {
+						sources.splice(i, 1);
+						delete this.plugin.settings.pendingUploads[source.url];
+						await save();
+					}),
+				);
+			}
+		});
+
+		let draft = "";
 		new Setting(containerEl)
-			.setName("Load order")
-			.setDesc(
-				"Which copy to show first. If it fails to load (server off, file not there yet), " +
-					"the next one is tried; the original URL is always the last resort.",
-			)
-			.addDropdown((dd) => {
-				dd.addOption("server-first", "Server → local → original");
-				dd.addOption("local-first", "Local → server → original");
-				dd.setValue(this.plugin.settings.sourceOrder).onChange(async (value) => {
-					this.plugin.settings.sourceOrder = value as SourceOrder;
-					await this.plugin.saveSettings();
-				});
-			});
+			.setName("Add server")
+			.setDesc("WebDAV folder laid out like the central archive (<url>/ab/abcd1234….jpg), readable and writable.")
+			.addText((text) => text.setPlaceholder("WebDAV folder URL").onChange((v) => (draft = v)))
+			.addButton((b) =>
+				b.setButtonText("Add").onClick(async () => {
+					const url = normalizeServerUrl(draft);
+					if (!/^https?:\/\//.test(url)) {
+						new Notice("Enter the server's http(s) address.");
+						return;
+					}
+					if (sources.some((s) => s.kind === "server" && s.url === url)) return;
+					const server: ArchiveSource = { kind: "server", url };
+					sources.unshift(server);
+					await save();
+				}),
+			);
+
+		const pending = this.plugin.servers.pendingCount();
+		if (pending > 0) {
+			new Setting(containerEl)
+				.setName("Waiting to upload")
+				.setDesc(`${pending} file(s) are saved locally but not on every server yet.`)
+				.addButton((b) =>
+					b.setButtonText("Upload now").onClick(async () => {
+						await this.plugin.servers.flushAll();
+						const left = this.plugin.servers.pendingCount();
+						new Notice(left ? `${left} file(s) still waiting: server not reachable.` : "All uploaded.");
+						this.display();
+					}),
+				);
+		}
+	}
+
+	private localLabel(): string {
+		const s = this.plugin.settings;
+		return s.archiveMode === "central" ? s.centralArchivePath : `<note folder>/${s.archiveDirName}`;
 	}
 
 	private renderStaleArchives(containerEl: HTMLElement): void {

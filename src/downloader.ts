@@ -3,6 +3,7 @@ import { matchPolicy } from "./policies";
 import type { ArchiveSettings } from "./settings";
 import { archiveRoot, ensureDir, ensureMarker } from "./fs-util";
 import { storeFor } from "./store";
+import type { ArchiveServers } from "./servers";
 
 export { ensureDir, ensureMarker } from "./fs-util";
 
@@ -22,12 +23,21 @@ export async function download(
 	destPath: string,
 	vault: Vault,
 	settings: ArchiveSettings,
+	servers: ArchiveServers,
 ): Promise<DownloadResult> {
 	const dest = storeFor(vault, destPath);
 	if (await dest.store.exists(dest.path)) return "skipped-exists";
 
 	const policy = matchPolicy(url);
 	if (!policy.archive) return "skipped-policy";
+
+	// Another device may have archived it already; its copy is quicker and surer than the original.
+	const archived = await servers.fetch(url);
+	if (archived) {
+		await writeFile(vault, settings, destPath, archived);
+		await servers.store(destPath, archived);
+		return "downloaded";
+	}
 
 	// HTTP → HTTPS 自动升级（Obsidian requestUrl 不接受明文 HTTP）
 	const fetchUrl = url.replace(/^http:\/\//, "https://");
@@ -48,6 +58,7 @@ export async function download(
 
 			if (response.status === 200) {
 				await writeFile(vault, settings, destPath, response.arrayBuffer);
+				await servers.store(destPath, response.arrayBuffer);
 				return "downloaded";
 			}
 

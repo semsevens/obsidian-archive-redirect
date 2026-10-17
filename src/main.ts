@@ -2,22 +2,25 @@ import { MarkdownPostProcessorContext, Notice, Plugin, TFile } from "obsidian";
 import { resolve } from "./resolver";
 import { extractUrls } from "./scanner";
 import { download, DownloadResult } from "./downloader";
-import { ArchiveSettings, DEFAULT_SETTINGS, isExternalPath, isInScope } from "./settings";
+import { ArchiveSettings, DEFAULT_SETTINGS, isExternalPath, isInScope, migrateSources } from "./settings";
 import { ArchiveSettingTab } from "./settings-ui";
 import { redirectAllMedia } from "./intercept";
 import { createLivePreviewExtension } from "./live-preview";
 import { MigrateModal } from "./migrate-modal";
 import { findStaleCentralArchives, reconcile } from "./reconcile.ts";
-import { ServerProbe } from "./server-probe";
+import { ArchiveServers } from "./servers";
+import { storeFor } from "./store";
 
 export default class ArchiveRedirectPlugin extends Plugin {
 	settings!: ArchiveSettings;
-	readonly server = new ServerProbe();
+	readonly servers = new ArchiveServers(this);
 
 	async onload() {
 		await this.loadSettings();
-		// Ask the server now, so the first note rendered doesn't wait for the answer.
-		void this.server.reachable(this.settings.serverUrl);
+		// Ask the servers now, so the first note rendered doesn't wait for the answer;
+		// one that answers also gets the files that were waiting for it.
+		void this.servers.check();
+		this.registerInterval(window.setInterval(() => void this.servers.flushAll(), 10 * 60_000));
 
 		// Reading mode
 		this.registerMarkdownPostProcessor((el, ctx) => this.interceptMedia(el, ctx));
@@ -95,7 +98,7 @@ export default class ArchiveRedirectPlugin extends Plugin {
 		// Not awaited: Obsidian holds the whole note back until a returned promise
 		// settles, and the server check behind it can take seconds, or longer in a
 		// background window. Images are swapped once it answers.
-		void redirectAllMedia(el, ctx.sourcePath, this.settings, this.app, this.server);
+		void redirectAllMedia(el, ctx.sourcePath, this.settings, this.app, this.servers);
 	}
 
 	private async archiveMd(file: TFile): Promise<{ ok: number; transient: number; permanent: number }> {
@@ -107,7 +110,7 @@ export default class ArchiveRedirectPlugin extends Plugin {
 		for (const url of urls) {
 			const dest = resolve(url, file.path, this.settings);
 			try {
-				const r: DownloadResult = await download(url, dest, this.app.vault, this.settings);
+				const r: DownloadResult = await download(url, dest, this.app.vault, this.settings, this.servers);
 				if (r === "downloaded") ok++;
 				else if (r === "failed-transient") transient++;
 				else if (r === "failed-permanent") permanent++;
@@ -150,7 +153,8 @@ export default class ArchiveRedirectPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		const raw = (await this.loadData()) ?? {};
+		// Saved settings from any earlier version: the current fields, plus 0.6.0's serverUrl/sourceOrder.
+		const raw = ((await this.loadData()) ?? {}) as Partial<ArchiveSettings> & { serverUrl?: unknown; sourceOrder?: unknown };
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
 		// Migration: pre-v0.5 configs only had `archiveDirName`. Seed the new central
 		// path with that value so a user who later flips to "central" mode keeps the
@@ -158,6 +162,15 @@ export default class ArchiveRedirectPlugin extends Plugin {
 		if (raw.archiveDirName && raw.centralArchivePath === undefined) {
 			this.settings.centralArchivePath = raw.archiveDirName;
 		}
+		this.settings.sources = migrateSources(raw);
+		this.settings.pendingUploads = { ...(raw.pendingUploads ?? {}) };
+		delete (this.settings as { serverUrl?: unknown }).serverUrl;
+		delete (this.settings as { sourceOrder?: unknown }).sourceOrder;
+	}
+
+	async readLocal(path: string): Promise<ArrayBuffer | null> {
+		const { store, path: p } = storeFor(this.app.vault, path);
+		return (await store.exists(p)) ? store.readBinary(p) : null;
 	}
 
 	async saveSettings() {

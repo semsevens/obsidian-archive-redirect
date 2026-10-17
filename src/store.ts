@@ -8,7 +8,7 @@ import { expandHome, isExternalPath } from "./settings.ts";
  * for an archive inside the vault; `fsStore` for one outside it, which the
  * vault API cannot reach.
  */
-export type Store = Pick<DataAdapter, "exists" | "mkdir" | "write" | "writeBinary" | "append">;
+export type Store = Pick<DataAdapter, "exists" | "mkdir" | "write" | "writeBinary" | "append" | "readBinary">;
 
 /** The store that holds `path`, and the path as that store expects it. */
 export function storeFor(vault: Vault, path: string): { store: Store; path: string } {
@@ -22,4 +22,8 @@ const fsStore: Store = {
 	write: (p, data) => fs.writeFile(p, data),
 	writeBinary: (p, data) => fs.writeFile(p, Buffer.from(data)),
 	append: (p, data) => fs.appendFile(p, data),
+	readBinary: async (p) => {
+		const b = await fs.readFile(p);
+		return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+	},
 };

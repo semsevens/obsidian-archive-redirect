@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import type { ArchiveSettings, SourceOrder } from "./settings";
+import type { ArchiveSettings, ArchiveSource } from "./settings";
 
 /**
  * Map (remote URL, owning markdown path, settings) → vault-relative archive path.
@@ -21,32 +21,39 @@ import type { ArchiveSettings, SourceOrder } from "./settings";
  */
 export function resolve(url: string, mdPath: string, settings: ArchiveSettings): string {
 	if (settings.archiveMode === "central") {
-		return `${settings.centralArchivePath}/${bucketedName(url)}`;
+		return `${settings.centralArchivePath}/${archiveName(url)}`;
 	}
 
 	const dir = mdPath.substring(0, mdPath.lastIndexOf("/"));
-	return `${dir}/${settings.archiveDirName}/${bucketedName(url).substring(3)}`;
+	return `${dir}/${settings.archiveDirName}/${archiveName(url).substring(3)}`;
 }
 
-/** Where the server copy of `url` lives: the central layout, under `serverUrl`. */
-export function serverUrlFor(url: string, serverUrl: string): string | null {
-	const base = serverUrl.trim().replace(/\/+$/, "");
-	return base ? `${base}/${bucketedName(url)}` : null;
-}
-
-/** The archived copies to try, in the order the settings ask for; missing ones left out. */
-export function orderSources(
-	copies: { local: string | null; server: string | null },
-	order: SourceOrder,
+/**
+ * The archived copies of `url` to try, in source order: the local one when it
+ * exists (`localSrc`), and each server that is up. Missing ones are left out.
+ */
+export function sourceCandidates(
+	url: string,
+	sources: ArchiveSource[],
+	localSrc: string | null,
+	isUp: (server: string) => boolean,
 ): string[] {
-	const list = order === "server-first" ? [copies.server, copies.local] : [copies.local, copies.server];
-	return list.filter((s): s is string => !!s);
+	return sources.flatMap((s) => {
+		if (s.kind === "local") return localSrc ? [localSrc] : [];
+		return s.url && isUp(s.url) ? [`${s.url}/${archiveName(url)}`] : [];
+	});
 }
 
-/** <bucket>/<sha1>.<ext>, the bucket being the first two hex chars of the hash. */
-function bucketedName(url: string): string {
+/** <bucket>/<sha1>.<ext>, the bucket being the first two hex chars of the hash: where servers keep `url`. */
+export function archiveName(url: string): string {
 	const hash = createHash("sha1").update(url).digest("hex");
 	return `${hash.substring(0, 2)}/${hash}.${guessExt(url)}`;
+}
+
+/** <bucket>/<sha1>.<ext> of a local archive path: its file name, under the hash's first two characters. */
+export function nameOf(localPath: string): string {
+	const file = localPath.substring(localPath.lastIndexOf("/") + 1);
+	return `${file.substring(0, 2)}/${file}`;
 }
 
 function guessExt(url: string): string {

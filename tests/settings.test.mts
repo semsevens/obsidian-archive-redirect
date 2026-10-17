@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import { strict as assert } from "node:assert";
-import { isInScope, DEFAULT_SETTINGS, expandHome, isExternalPath } from "../src/settings.ts";
+import { isInScope, DEFAULT_SETTINGS, expandHome, isExternalPath, migrateSources } from "../src/settings.ts";
 
 describe("settings — isInScope", () => {
 	test("empty includedPaths = whole vault", () => {
@@ -50,8 +50,25 @@ describe("settings — archive outside the vault", () => {
 		assert.equal(expandHome("~/Media/_archive/ab/x.png", "/Users/me"), "/Users/me/Media/_archive/ab/x.png");
 		assert.equal(expandHome("/abs/x.png", "/Users/me"), "/abs/x.png");
 	});
-	test("no server by default, server first once one is set", () => {
-		assert.equal(DEFAULT_SETTINGS.serverUrl, "");
-		assert.equal(DEFAULT_SETTINGS.sourceOrder, "server-first");
+	test("by default only the local archive", () => {
+		assert.deepEqual(DEFAULT_SETTINGS.sources, [{ kind: "local" }]);
+	});
+});
+
+describe("settings — migrating 0.6.0's single server", () => {
+	const url = "https://host.ts.net/library/_archive";
+	test("server first", () => {
+		assert.deepEqual(migrateSources({ serverUrl: url + "/", sourceOrder: "server-first" }), [{ kind: "server", url }, { kind: "local" }]);
+	});
+	test("local first", () => {
+		assert.deepEqual(migrateSources({ serverUrl: url, sourceOrder: "local-first" }), [{ kind: "local" }, { kind: "server", url }]);
+	});
+	test("no server, or settings older than 0.6.0", () => {
+		assert.deepEqual(migrateSources({ serverUrl: "" }), [{ kind: "local" }]);
+		assert.deepEqual(migrateSources({}), [{ kind: "local" }]);
+	});
+	test("a source list already there is kept", () => {
+		const sources = [{ kind: "local" as const }];
+		assert.equal(migrateSources({ sources, serverUrl: url }), sources);
 	});
 });

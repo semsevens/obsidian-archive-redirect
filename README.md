@@ -22,8 +22,9 @@ For every remote `<img>`, `<video>`, `<audio>` it encounters:
 1. **Archives** the file under a content-addressed path (SHA1 of the URL). Two storage modes are supported:
    - **Sibling** (default): `<mdDir>/_archive/<sha1>.<ext>` — one folder per markdown's directory, notes stay self-contained.
    - **Central**: `<centralPath>/<bucket>/<sha1>.<ext>` — a single shared folder, bucketed by the first 2 hex chars of the SHA1 (256 buckets). True global dedup; cache survives moving the markdown. The folder can be vault-relative or an absolute path outside the vault (e.g. `~/Media/_archive`).
-2. **Redirects** the rendered element's `src` to an archived copy at display time — in both Reading mode and Live Preview. With a **server URL** set, a copy of the archive on your own server (same `<bucket>/<sha1>.<ext>` layout) is used too; **Load order** picks server or local first. A copy that fails to load hands over to the next, and the remote URL is the last resort.
-3. **Leaves the markdown file untouched.** The URL in your `.md` never changes. If you later view the file outside Obsidian, share it, or this plugin is uninstalled, the remote URL still works as a fallback.
+2. **Redirects** the rendered element's `src` to an archived copy at display time — in both Reading mode and Live Preview. Copies come from an ordered list of **sources**: the local archive, plus any number of your own WebDAV servers (same `<bucket>/<sha1>.<ext>` layout). A copy that fails to load hands over to the next, and the remote URL is the last resort.
+3. **Shares the archive through your servers.** A new download is saved locally and uploaded to every server; a server that can't be reached gets it once it's back. A file another device already put on a server is copied from there instead of the original URL — so every device ends up with the same archive.
+4. **Leaves the markdown file untouched.** The URL in your `.md` never changes. If you later view the file outside Obsidian, share it, or this plugin is uninstalled, the remote URL still works as a fallback.
 
 The archive is content-addressed by URL hash, so the same URL appearing in multiple notes is stored once (sibling mode dedups per folder; central mode dedups across the whole vault).
 
@@ -65,8 +66,8 @@ The plugin archives in three ways:
 | Archive mode | `Sibling` | `Sibling` = per-note folder; `Central` = one shared vault-relative folder with hash bucketing. |
 | Archive directory name *(sibling)* | `_archive` | Subfolder name (sibling to each `.md`) that holds cached files. |
 | Central archive path *(central)* | `_archive` | Folder that holds all cached files, bucketed by hash prefix: vault-relative, or an absolute / `~/` path outside the vault. Migrate and reconcile work only inside the vault. |
-| Server URL | (empty = none) | Base URL of a server copy of the archive in the central layout, e.g. `https://host.ts.net/library/_archive`. The plugin only reads from it; copy files there yourself (e.g. `rsync`). Checked once, then every 5 min (30 s while unreachable). |
-| Load order | `Server → local → original` | Which copy to show first. The remote URL is always last. |
+| Sources | Local archive | Ordered list of where copies are read from: the local archive and WebDAV servers (e.g. `https://host.ts.net/dav/archive`, readable and writable). Each server is checked once, then every 5 min (30 s while unreachable); one that's down is skipped. The local archive always stays in the list. |
+| Waiting to upload | — | Shown when files couldn't reach a server yet; they're retried when it answers and every 10 min, or with **Upload now**. |
 | Auto-archive on file modify | on | If off, only the manual scan command triggers downloads. |
 | Included paths | (empty = whole vault) | Newline-separated vault paths to operate on. Example: `raw/wechat`. |
 
