@@ -24,7 +24,8 @@ For every remote `<img>`, `<video>`, `<audio>` it encounters:
    - **Central**: `<centralPath>/<bucket>/<sha1>.<ext>` — a single shared folder, bucketed by the first 2 hex chars of the SHA1 (256 buckets). True global dedup; cache survives moving the markdown. The folder can be vault-relative or an absolute path outside the vault (e.g. `~/Media/_archive`).
 2. **Redirects** the rendered element's `src` to an archived copy at display time — in both Reading mode and Live Preview. Copies come from an ordered list of **sources**: the local archive, plus any number of your own WebDAV servers (same `<bucket>/<sha1>.<ext>` layout). A copy that fails to load hands over to the next, and the remote URL is the last resort.
 3. **Shares the archive through your servers.** A new download is saved locally and uploaded to every server; a server that can't be reached gets it once it's back. A file another device already put on a server is copied from there instead of the original URL — so every device ends up with the same archive.
-4. **Leaves the markdown file untouched.** The URL in your `.md` never changes. If you later view the file outside Obsidian, share it, or this plugin is uninstalled, the remote URL still works as a fallback.
+4. **Works on mobile too.** On a phone or tablet the servers are the archive: copies are read from them, and new downloads are uploaded straight to them (a local folder outside the vault exists only on desktop; one inside the vault works everywhere).
+5. **Leaves the markdown file untouched.** The URL in your `.md` never changes. If you later view the file outside Obsidian, share it, or this plugin is uninstalled, the remote URL still works as a fallback.
 
 The archive is content-addressed by URL hash, so the same URL appearing in multiple notes is stored once (sibling mode dedups per folder; central mode dedups across the whole vault).
 

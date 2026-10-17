@@ -2,7 +2,7 @@ import { Vault, requestUrl } from "obsidian";
 import { matchPolicy } from "./policies";
 import type { ArchiveSettings } from "./settings";
 import { archiveRoot, ensureDir, ensureMarker } from "./fs-util";
-import { storeFor } from "./store";
+import { storeFor, type Store } from "./store";
 import type { ArchiveServers } from "./servers";
 
 export { ensureDir, ensureMarker } from "./fs-util";
@@ -25,18 +25,23 @@ export async function download(
 	settings: ArchiveSettings,
 	servers: ArchiveServers,
 ): Promise<DownloadResult> {
+	// null on mobile with the archive folder outside the vault: there, servers are the only archive.
 	const dest = storeFor(vault, destPath);
-	if (await dest.store.exists(dest.path)) return "skipped-exists";
+	if (dest && (await dest.store.exists(dest.path))) return "skipped-exists";
 
 	const policy = matchPolicy(url);
 	if (!policy.archive) return "skipped-policy";
 
-	// Another device may have archived it already; its copy is quicker and surer than the original.
-	const archived = await servers.fetch(url);
-	if (archived) {
-		await writeFile(vault, settings, destPath, archived);
-		await servers.store(destPath, archived);
-		return "downloaded";
+	if (!dest) {
+		if (await servers.storedAnywhere(url)) return "skipped-exists";
+	} else {
+		// Another device may have archived it already; its copy is quicker and surer than the original.
+		const archived = await servers.fetch(url);
+		if (archived) {
+			await writeFile(dest, vault, settings, destPath, archived);
+			await servers.store(destPath, archived);
+			return "downloaded";
+		}
 	}
 
 	// HTTP → HTTPS 自动升级（Obsidian requestUrl 不接受明文 HTTP）
@@ -57,8 +62,10 @@ export async function download(
 			]);
 
 			if (response.status === 200) {
-				await writeFile(vault, settings, destPath, response.arrayBuffer);
-				await servers.store(destPath, response.arrayBuffer);
+				if (dest) await writeFile(dest, vault, settings, destPath, response.arrayBuffer);
+				const uploaded = await servers.store(destPath, response.arrayBuffer, !!dest);
+				// Kept nowhere (no local archive, no server up): leave it for the next scan.
+				if (!dest && uploaded === 0) return "failed-transient";
 				return "downloaded";
 			}
 
@@ -87,14 +94,15 @@ function rejectAfter<T>(ms: number): Promise<T> {
 }
 
 async function writeFile(
+	{ store, path }: { store: Store; path: string },
 	vault: Vault,
 	settings: ArchiveSettings,
 	destPath: string,
 	buf: ArrayBuffer,
 ): Promise<void> {
-	const { store, path } = storeFor(vault, destPath);
 	await ensureDir(store, path.substring(0, path.lastIndexOf("/")));
-	await ensureMarker(store, storeFor(vault, archiveRoot(settings, destPath)).path);
+	const root = storeFor(vault, archiveRoot(settings, destPath));
+	if (root) await ensureMarker(store, root.path);
 	await store.writeBinary(path, buf);
 }
 
@@ -113,7 +121,12 @@ async function logFailure(
 		settings.archiveMode === "central"
 			? settings.centralArchivePath
 			: destPath.substring(0, destPath.lastIndexOf("/"));
-	const { store, path: dir } = storeFor(vault, logDir);
+	const log = storeFor(vault, logDir);
+	if (!log) {
+		console.warn(`[archive-redirect] ${originalUrl}: ${error}`);
+		return;
+	}
+	const { store, path: dir } = log;
 	await ensureDir(store, dir);
 	const logPath = `${dir}/.failed.jsonl`;
 	const entry =

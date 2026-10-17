@@ -1,8 +1,7 @@
-import { existsSync } from "fs";
-import { homedir } from "os";
 import { App, Platform, TFile } from "obsidian";
 import { resolve, sourceCandidates } from "./resolver";
 import type { ArchiveServers } from "./servers";
+import { desktopNode } from "./store";
 import { expandHome, isExternalPath, type ArchiveSettings } from "./settings";
 
 /**
@@ -55,8 +54,10 @@ function show(node: HTMLElement, sources: string[], i: number): void {
 function localSrc(url: string, sourcePath: string, settings: ArchiveSettings, app: App): string | null {
 	const path = resolve(url, sourcePath, settings);
 	if (isExternalPath(path)) {
-		const abs = expandHome(path, homedir());
-		if (!existsSync(abs)) return null;
+		const node = desktopNode();
+		if (!node) return null; // mobile: a folder outside the vault can't be read
+		const abs = expandHome(path, node.os.homedir());
+		if (!node.fs.existsSync(abs)) return null;
 		// Obsidian serves local files under its own resource scheme, as getResourcePath does in the vault.
 		return Platform.resourcePathPrefix + abs.replace(/^\//, "").split("/").map(encodeURIComponent).join("/");
 	}

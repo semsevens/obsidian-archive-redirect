@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { sha1Hex } from "./sha1.ts";
 import type { ArchiveSettings, ArchiveSource } from "./settings";
 
 /**
@@ -46,7 +46,7 @@ export function sourceCandidates(
 
 /** <bucket>/<sha1>.<ext>, the bucket being the first two hex chars of the hash: where servers keep `url`. */
 export function archiveName(url: string): string {
-	const hash = createHash("sha1").update(url).digest("hex");
+	const hash = sha1Hex(url);
 	return `${hash.substring(0, 2)}/${hash}.${guessExt(url)}`;
 }
 

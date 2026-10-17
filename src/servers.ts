@@ -53,25 +53,46 @@ export class ArchiveServers {
 	}
 
 	/** The server copy of the file archived for `url`, from the first server that has it. */
-	async fetch(url: string): Promise<ArrayBuffer | null> {
-		const name = archiveName(url);
+	fetch(url: string): Promise<ArrayBuffer | null> {
+		return this.fetchName(archiveName(url));
+	}
+
+	private async fetchName(name: string, except?: string): Promise<ArrayBuffer | null> {
 		for (const [base, up] of await this.check()) {
-			if (!up) continue;
+			if (!up || base === except) continue;
 			const r = await request({ url: `${base}/${name}` });
 			if (r?.status === 200) return r.arrayBuffer;
 		}
 		return null;
 	}
 
-	/** Put a newly archived file (local path `localPath`) on every server, queueing it for those that can't take it now. */
-	async store(localPath: string, buf: ArrayBuffer): Promise<void> {
-		const name = nameOf(localPath);
-		let queued = false;
+	/** Whether any reachable server has the file archived for `url`. */
+	async storedAnywhere(url: string): Promise<boolean> {
+		const name = archiveName(url);
 		for (const [base, up] of await this.check()) {
-			if (up && (await this.has(base, name) || await this.upload(base, name, buf))) continue;
-			queued = this.queue(base, localPath) || queued;
+			if (up && (await this.has(base, name))) return true;
 		}
-		if (queued) await this.host.saveSettings();
+		return false;
+	}
+
+	/**
+	 * Put a newly archived file (local path `localPath`) on every server, queueing
+	 * it for those that can't take it now. Returns how many servers have it.
+	 * `keptLocally` false (mobile): with no server holding it either, there'd be
+	 * no copy to upload later, so nothing is queued and the next scan tries again.
+	 */
+	async store(localPath: string, buf: ArrayBuffer, keptLocally = true): Promise<number> {
+		const name = nameOf(localPath);
+		let stored = 0;
+		const missed: string[] = [];
+		for (const [base, up] of await this.check()) {
+			if (up && (await this.has(base, name) || await this.upload(base, name, buf))) stored++;
+			else missed.push(base);
+		}
+		if (!keptLocally && stored === 0) return 0;
+		const queued = missed.filter((base) => this.queue(base, localPath));
+		if (queued.length) await this.host.saveSettings();
+		return stored;
 	}
 
 	/** Upload what is waiting for `base`; stop at the first failure and leave the rest for next time. */
@@ -84,9 +105,12 @@ export class ArchiveServers {
 			while (pending[base]?.length) {
 				const localPath = pending[base][0];
 				const name = nameOf(localPath);
-				const buf = await this.host.readLocal(localPath);
-				// Gone locally (deleted by hand): nothing left to send.
-				if (buf && !(await this.has(base, name)) && !(await this.upload(base, name, buf))) break;
+				if (!(await this.has(base, name))) {
+					// No local copy (mobile, or deleted by hand): take it from a server that has it.
+					const buf = (await this.host.readLocal(localPath)) ?? (await this.fetchName(name, base));
+					if (!buf) console.warn(`[archive-redirect] no copy of ${name} left to upload to ${base}`);
+					else if (!(await this.upload(base, name, buf))) break;
+				}
 				pending[base].shift();
 				done++;
 			}

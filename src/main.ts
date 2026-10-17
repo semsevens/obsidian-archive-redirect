@@ -169,8 +169,8 @@ export default class ArchiveRedirectPlugin extends Plugin {
 	}
 
 	async readLocal(path: string): Promise<ArrayBuffer | null> {
-		const { store, path: p } = storeFor(this.app.vault, path);
-		return (await store.exists(p)) ? store.readBinary(p) : null;
+		const local = storeFor(this.app.vault, path);
+		return local && (await local.store.exists(local.path)) ? local.store.readBinary(local.path) : null;
 	}
 
 	async saveSettings() {
